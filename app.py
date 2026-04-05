@@ -12,39 +12,45 @@ USER_PIN = "1234"
 if 'auth' not in st.session_state: st.session_state.auth = False
 if not st.session_state.auth:
     st.title("🔒 Aura Secure Gateway")
-    if st.text_input("Enter PIN", type="password") == USER_PIN:
-        if st.button("Unlock"): 
+    pin_input = st.text_input("Enter PIN", type="password")
+    if st.button("Unlock"): 
+        if pin_input == USER_PIN:
             st.session_state.auth = True
             st.rerun()
+        else:
+            st.error("Incorrect PIN")
     st.stop()
 
 # --- 2. DATA VAULT ---
 DB_FILE = "aura_vault.csv"
 def load_data():
     if os.path.exists(DB_FILE):
-        df = pd.read_csv(DB_FILE)
-        df['Date'] = pd.to_datetime(df['Date'])
-        return df
+        try:
+            df = pd.read_csv(DB_FILE)
+            df['Date'] = pd.to_datetime(df['Date'])
+            return df
+        except:
+            return pd.DataFrame(columns=["Date", "Type", "Category", "Amount", "Account", "Recurring"])
     return pd.DataFrame(columns=["Date", "Type", "Category", "Amount", "Account", "Recurring"])
 
 if 'df' not in st.session_state: st.session_state.df = load_data()
 
-# --- 3. TEMPORAL LOGIC (Weekly/Monthly/Yearly) ---
+# --- 3. TEMPORAL LOGIC ---
 st.sidebar.title("🕒 Time Horizon")
 view_mode = st.sidebar.selectbox("View Range", ["This Week", "This Month", "This Year"])
 
 today = pd.to_datetime(datetime.now().date())
 if view_mode == "This Week":
     start_date = today - timedelta(days=today.weekday())
-    budget_goal = 750 # Weekly Goal
+    budget_goal = 750 
 elif view_mode == "This Month":
     start_date = today.replace(day=1)
-    budget_goal = 3000 # Monthly Goal
+    budget_goal = 3000
 else:
     start_date = today.replace(month=1, day=1)
-    budget_goal = 36000 # Yearly Goal
+    budget_goal = 36000
 
-# Filter data based on selection
+# Filter data
 filtered_df = st.session_state.df[st.session_state.df['Date'] >= start_date]
 period_expenses = filtered_df[filtered_df['Type'] == 'Expense']['Amount'].sum()
 
@@ -55,7 +61,8 @@ for _, row in st.session_state.df.iterrows():
     if row['Account'] in accounts: accounts[row['Account']] += val
 
 # --- 5. EXECUTIVE DASHBOARD ---
-st.title(f"🏛️ Aura Executive Command ({view_mode})")
+st.title(f"🏛️ Aura Executive Command")
+st.caption(f"Viewing Perspective: {view_mode}")
 m1, m2, m3, m4, m5 = st.columns(5)
 m1.metric("Net Worth", f"${sum(accounts.values()):,.2f}")
 m2.metric("Checking", f"${accounts['Checking']:,.0f}")
@@ -76,17 +83,23 @@ with tabs[0]:
     col_a, col_b = st.columns(2)
     with col_a:
         st.subheader("Category Breakdown")
-        if not filtered_df.empty:
-            fig = px.pie(filtered_df[filtered_df['Type']=='Expense'], values='Amount', names='Category', hole=0.4, template="plotly_dark")
+        expenses_only = filtered_df[filtered_df['Type']=='Expense']
+        if not expenses_only.empty:
+            fig = px.pie(expenses_only, values='Amount', names='Category', hole=0.4, template="plotly_dark")
             st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No expenses found for this period.")
     with col_b:
         st.subheader("Spending Trend")
         if not filtered_df.empty:
             trend = filtered_df.groupby('Date')['Amount'].sum().reset_index()
-            fig2 = px.line(trend, x='Date', y='Amount', template="plotly_dark", line_shape="spline")
+            fig2 = px.line(trend, x='Date', y='Amount', template="plotly_dark")
             st.plotly_chart(fig2, use_container_width=True)
 
 with tabs[1]:
     c1, c2 = st.columns([1, 2])
     with c1:
-        st.
+        st.subheader("Log Transaction")
+        t_date = st.date_input("Date", value=datetime.now().date())
+        t_type = st.selectbox("Type", ["Expense", "Income"])
+        t_
