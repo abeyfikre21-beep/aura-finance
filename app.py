@@ -63,4 +63,67 @@ if page == "Dashboard":
     draw_c(h2, "Checking", st.session_state.acct_data['Checking'])
     draw_c(h3, "Savings", st.session_state.acct_data['Savings'])
     draw_c(h4, "Retirement", st.session_state.acct_data['Retirement'])
-    draw_c(h5, "Total Debt", d_total, "#FF
+    draw_c(h5, "Total Debt", d_total, "#FF5252")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ADJUSTMENT FORM
+    with st.expander("🛠️ EDIT HERO BALANCES", expanded=False):
+        with st.form("hero_edit_form"):
+            c1, c2, c3 = st.columns(3)
+            new_ch = c1.number_input("Checking", value=float(st.session_state.acct_data['Checking']))
+            new_sa = c2.number_input("Savings", value=float(st.session_state.acct_data['Savings']))
+            new_re = c3.number_input("Retirement", value=float(st.session_state.acct_data['Retirement']))
+            
+            if st.form_submit_button("PRESS TO UPDATE DASHBOARD"):
+                st.session_state.acct_data = {"Checking": new_ch, "Savings": new_sa, "Retirement": new_re}
+                pd.DataFrame([st.session_state.acct_data]).to_csv("aura_accounts.csv", index=False)
+                st.rerun()
+
+    st.markdown("---")
+    
+    # PINNED SECTION (CLEANED)
+    st.markdown("### 🏛️ Wealth Progress")
+    # Only showing Savings Goal now
+    spent = st.session_state.exp_df[st.session_state.exp_df['Category'] == "Savings Goal"]['Amount'].sum() if not st.session_state.exp_df.empty else 0
+    goal_lim = 1000
+    
+    st.markdown(f"""
+    <div class="budget-card">
+        <div class="hero-label">Savings Goal Progress</div>
+        <div class="hero-val">${spent:,.0f} <span style="font-size:14px; color:#8E8E93;">/ ${goal_lim:,.0f}</span></div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.progress(min(float(spent/goal_lim), 1.0) if goal_lim > 0 else 0.0)
+
+# --- 6. PAGE: DEBT PORTFOLIO ---
+elif page == "Debt Portfolio":
+    st.title("Debt Portfolio")
+    with st.form("debt_adder", clear_on_submit=True):
+        dn = st.text_input("Lender")
+        db = st.number_input("Balance", min_value=0.0)
+        if st.form_submit_button("Confirm Debt"):
+            new_row = pd.DataFrame([[dn, db]], columns=["Name", "Balance"])
+            st.session_state.debt_df = pd.concat([st.session_state.debt_df, new_row], ignore_index=True)
+            st.session_state.debt_df.to_csv("aura_debt.csv", index=False)
+            st.rerun()
+
+    for i, r in st.session_state.debt_df.iterrows():
+        st.markdown(f'<div class="budget-card"><b>{r["Name"]}</b>: ${r["Balance"]:,.0f}</div>', unsafe_allow_html=True)
+        if st.button("Delete Entry", key=f"d_{i}"):
+            st.session_state.debt_df = st.session_state.debt_df.drop(i)
+            st.session_state.debt_df.to_csv("aura_debt.csv", index=False)
+            st.rerun()
+
+# --- 7. PAGE: BUDGETS ---
+elif page in ["Weekly Budget", "Monthly Budget"]:
+    st.title(f"{page} Management")
+    with st.form("exp_adder", clear_on_submit=True):
+        cat_list = ["Rent", "Groceries", "Savings Goal", "Other"]
+        c_sel = st.selectbox("Category", cat_list)
+        a_val = st.number_input("Amount", min_value=0.0)
+        if st.form_submit_button("Log Spent"):
+            new_e = pd.DataFrame([[datetime.now(), c_sel, a_val]], columns=["Date", "Category", "Amount"])
+            st.session_state.exp_df = pd.concat([st.session_state.exp_df, new_e], ignore_index=True)
+            st.session_state.exp_df.to_csv("aura_expenses.csv", index=False)
+            st.rerun()
