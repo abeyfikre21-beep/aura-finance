@@ -102,4 +102,34 @@ with tabs[1]:
         st.subheader("Log Transaction")
         t_date = st.date_input("Date", value=datetime.now().date())
         t_type = st.selectbox("Type", ["Expense", "Income"])
-        t_
+        t_acc = st.selectbox("Account", list(accounts.keys()))
+        t_cat = st.selectbox("Category", ["Rent", "Food", "Bills", "Invest", "Leisure"])
+        t_amt = st.number_input("Amount", min_value=0.0)
+        if st.button("🚀 Commit"):
+            new_row = pd.DataFrame([[pd.to_datetime(t_date), t_type, t_cat, t_amt, t_acc, False]], 
+                                   columns=["Date", "Type", "Category", "Amount", "Account", "Recurring"])
+            st.session_state.df = pd.concat([st.session_state.df, new_row], ignore_index=True)
+            st.session_state.df.to_csv(DB_FILE, index=False)
+            st.toast("Saved to Vault")
+            st.rerun()
+    with c2:
+        st.dataframe(filtered_df.sort_values("Date", ascending=False), use_container_width=True)
+
+with tabs[2]:
+    st.subheader("🧠 Aura AI Advisor")
+    days_passed = (today - start_date).days + 1
+    daily_avg = period_expenses / days_passed
+    st.write(f"Your average spending for this period is **${daily_avg:,.2f}/day**.")
+    if period_expenses > budget_goal:
+        st.error(f"Critical: Over {view_mode} budget by ${period_expenses - budget_goal:,.2f}.")
+    else:
+        st.success(f"Status: You are ${budget_goal - period_expenses:,.2f} under your {view_mode} limit.")
+
+with tabs[3]:
+    if st.button("🔓 Logout"):
+        st.session_state.auth = False
+        st.rerun()
+    if st.button("🗑️ Wipe All Data"):
+        if os.path.exists(DB_FILE): os.remove(DB_FILE)
+        st.session_state.df = pd.DataFrame(columns=["Date", "Type", "Category", "Amount", "Account", "Recurring"])
+        st.rerun()
