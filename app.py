@@ -74,7 +74,7 @@ c2.metric("Liquid Cash", f"${accounts['Checking'] + accounts['Savings']:,.0f}")
 c3.metric("Investments", f"${accounts['Retirement']:,.0f}")
 
 # --- 6. NAVIGATION ---
-tabs = st.tabs(["💸 Log", "📊 Stats", "📈 Markets", "⚙️ System"])
+tabs = st.tabs(["💸 Log", "📊 Stats", "📈 Markets", "🧠 AI", "⚙️"])
 
 with tabs[0]: # LOG TAB
     st.subheader("New Entry")
@@ -82,8 +82,6 @@ with tabs[0]: # LOG TAB
     t_amt = st.number_input("Amount", min_value=0.0)
     t_cat = st.selectbox("Category", ["Food", "Invest", "Bills", "Leisure", "Housing", "Transport"])
     t_acc = st.selectbox("Account", list(accounts.keys()))
-    
-    # RE-ADDED: Receipt Capture
     receipt_file = st.file_uploader("Capture/Upload Receipt", type=['jpg', 'png', 'jpeg'])
     
     if st.button("🚀 Commit Transaction", use_container_width=True):
@@ -109,8 +107,7 @@ with tabs[1]: # STATS TAB
         fig.update_layout(showlegend=False, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig, use_container_width=True)
     
-    # RE-ADDED: Expandable History with Receipt View
-    for i, row in st.session_state.df.sort_index(ascending=False).head(15).iterrows():
+    for i, row in st.session_state.df.sort_index(ascending=False).head(10).iterrows():
         with st.expander(f"{row['Date'].strftime('%m/%d')} - {row['Category']}: ${row['Amount']}"):
             st.write(f"Account: {row['Account']} | Type: {row['Type']}")
             if row['Receipt'] != "None" and os.path.exists(str(row['Receipt'])):
@@ -129,11 +126,37 @@ with tabs[2]: # MARKETS TAB
         except Exception as e:
             st.error(f"Market Sync Error: {e}")
 
-with tabs[3]: # SYSTEM TAB
-    st.subheader("System Control")
+with tabs[3]: # NEW: AI ADVISOR TAB
+    st.subheader("🔮 Aura Forecast Engine")
+    
+    # Calculate Monthly Cashflow
+    df = st.session_state.df
+    if not df.empty:
+        df['Month'] = df['Date'].dt.strftime('%b %Y')
+        summary = df.groupby(['Month', 'Type'])['Amount'].sum().unstack(fill_value=0)
+        
+        if 'Income' in summary and 'Expense' in summary:
+            # Momentum Chart
+            fig_flow = px.bar(summary, barmode='group', template="plotly_dark", 
+                             color_discrete_map={'Income': '#D4AF37', 'Expense': '#1c1c1e'})
+            st.plotly_chart(fig_flow, use_container_width=True)
+            
+            # Prediction Logic
+            avg_income = summary['Income'].mean()
+            avg_expense = summary['Expense'].mean()
+            monthly_savings = avg_income - avg_expense
+            
+            remaining_to_goal = NW_GOAL - total_nw
+            
+            if monthly_savings > 0:
+                months_to_goal = remaining_to_goal / monthly_savings
+                st.success(f"💎 **Forecast:** At your current savings rate (${monthly_savings:,.0f}/mo), you will hit your ${NW_GOAL:,.0f} goal in **{months_to_goal:.1f} months**.")
+            else:
+                st.warning("⚠️ **Forecast:** Your current spending is higher than your income. Adjusting your 'Leisure' category could help hit your goal.")
+        else:
+            st.info("Add at least one Income and one Expense entry to see your forecast.")
+
+with tabs[4]: # SYSTEM TAB
     if st.button("Logout", use_container_width=True):
         st.session_state.auth = False
-        st.rerun()
-    if st.button("🗑️ Factory Reset Data", use_container_width=True):
-        if os.path.exists(DB_FILE): os.remove(DB_FILE)
         st.rerun()
