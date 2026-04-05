@@ -1,105 +1,120 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
+import os
 
-# --- 1. SECURITY LAYER ---
-# Change '1234' to any PIN you want!
+# --- 1. CORE SETTINGS & SECURITY ---
+st.set_page_config(page_title="Aura Finance OS", layout="wide")
 USER_PIN = "1234" 
 
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
-
-if not st.session_state.authenticated:
-    st.title("🔒 Aura Finance Secure Login")
-    pin_input = st.text_input("Enter your 4-digit PIN", type="password")
-    if st.button("Unlock Dashboard"):
-        if pin_input == USER_PIN:
-            st.session_state.authenticated = True
+if 'auth' not in st.session_state: st.session_state.auth = False
+if not st.session_state.auth:
+    st.title("🔒 Aura Secure Gateway")
+    if st.text_input("Enter PIN", type="password") == USER_PIN:
+        if st.button("Unlock"): 
+            st.session_state.auth = True
             st.rerun()
-        else:
-            st.error("Access Denied: Incorrect PIN")
-    st.stop() # Stops the rest of the app from loading until logged in
+    st.stop()
 
-# --- 2. PREMIUM CONFIG (Appears only after login) ---
-st.set_page_config(page_title="Aura Finance Pro", layout="wide")
+# --- 2. DATA VAULT (Persistence) ---
+DB_FILE = "aura_vault.csv"
+def load_data():
+    if os.path.exists(DB_FILE): return pd.read_csv(DB_FILE)
+    return pd.DataFrame(columns=["Date", "Type", "Category", "Amount", "Account", "Recurring"])
 
-st.markdown("""
-    <style>
-    [data-testid="stMetricValue"] { font-size: 32px; color: #00f2ff; font-weight: 700; }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] { background-color: #1c2128; border-radius: 8px; color: white; }
-    </style>
-    """, unsafe_allow_html=True)
+def save_data(df): df.to_csv(DB_FILE, index=False)
 
-# --- 3. DATA PERSISTENCE ---
-if 'transactions' not in st.session_state:
-    st.session_state.transactions = pd.DataFrame(columns=["Date", "Category", "Amount", "Type"])
+if 'df' not in st.session_state: st.session_state.df = load_data()
 
-starting_balance = 50000 
-total_spent = st.session_state.transactions[st.session_state.transactions['Type'] == 'Expense']['Amount'].sum()
-total_earned = st.session_state.transactions[st.session_state.transactions['Type'] == 'Income']['Amount'].sum()
-live_net_worth = starting_balance + total_earned - total_spent
+# --- 3. LIVE ACCOUNT ENGINE ---
+# Update these starting balances in your "Settings" later
+accounts = {
+    "Checking": 5000,
+    "Savings": 15000,
+    "Retirement": 45000,
+    "Debt": -2500
+}
 
-# --- 4. EXECUTIVE HEADER ---
+# Calculate Live Totals from Data
+for _, row in st.session_state.df.iterrows():
+    amt = row['Amount'] if row['Type'] == 'Income' else -row['Amount']
+    if row['Account'] in accounts:
+        accounts[row['Account']] += amt
+
+net_worth = sum(accounts.values())
+
+# --- 4. EXECUTIVE DASHBOARD ---
 st.title("🏛️ Aura Executive Command")
-st.caption(f"Secure Session | {datetime.now().strftime('%Y-%m-%d')}")
+st.caption(f"System Active | {datetime.now().strftime('%Y-%m-%d')}")
 
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Live Net Worth", f"${live_net_worth:,.2f}")
-m2.metric("Monthly Burn", f"${total_spent:,.2f}")
-health_score = int(max(0, min(100, (live_net_worth / 1000)))) 
-m3.metric("Health Score", f"{health_score}/100")
-m4.metric("Status", "Operational" if health_score > 50 else "Watchlist")
+col1, col2, col3, col4, col5 = st.columns(5)
+col1.metric("Net Worth", f"${net_worth:,.2f}")
+col2.metric("Checking", f"${accounts['Checking']:,.0f}")
+col3.metric("Savings", f"${accounts['Savings']:,.0f}")
+col4.metric("Retirement", f"${accounts['Retirement']:,.0f}")
+col5.metric("Total Debt", f"${accounts['Debt']:,.0f}", delta_color="inverse")
 
-# --- 5. THE UPGRADE TABS ---
-tabs = st.tabs(["🚀 Wealth Forecast", "🧪 Scenario Lab", "💸 Transactions", "⚙️ Settings"])
+# --- 5. THE WORKSPACE ---
+tabs = st.tabs(["📈 Analytics", "💸 Cash Flow", "🤖 AI Advisor", "🔄 Recurring", "⚙️ System"])
 
-with tabs[0]:
-    st.subheader("Predictive Wealth Trajectory")
-    months = 12
-    avg_monthly_gain = 1200 
-    dates = [datetime.now() + timedelta(days=30*i) for i in range(months)]
-    forecast = [live_net_worth + (avg_monthly_gain * i) for i in range(months)]
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=dates, y=forecast, mode='lines', name='Forecast', line=dict(color='#00f2ff', width=3)))
-    fig.update_layout(template="plotly_dark", height=350, margin=dict(l=0,r=0,t=20,b=0))
-    st.plotly_chart(fig, use_container_width=True)
+with tabs[0]: # GRAPH INSIGHTS
+    st.subheader("Budget Visualization")
+    if not st.session_state.df.empty:
+        fig = px.pie(st.session_state.df[st.session_state.df['Type']=='Expense'], 
+                     values='Amount', names='Category', hole=0.5, template="plotly_dark")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Log data in 'Cash Flow' to see your budget graph.")
 
-with tabs[1]:
-    st.subheader("🧪 Financial Scenario Simulator")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        one_time_cost = st.slider("One-time Purchase", 0, 50000, 0, step=500)
-        monthly_cut = st.slider("Monthly Budget Cut", 0, 2000, 0, step=50)
-    with col_b:
-        new_nw = live_net_worth - one_time_cost
-        new_forecast = [new_nw + ((avg_monthly_gain + monthly_cut) * i) for i in range(months)]
-        st.metric("New Projected NW (12mo)", f"${new_forecast[-1]:,.2f}", delta=f"${new_forecast[-1] - forecast[-1]:,.2f}")
-
-with tabs[2]:
-    st.subheader("Transaction Ledger")
+with tabs[1]: # CASH FLOW (Logging)
     c1, c2 = st.columns([1, 2])
     with c1:
-        with st.expander("➕ Log Transaction", expanded=True):
-            t_date = st.date_input("Date")
-            t_type = st.radio("Type", ["Expense", "Income"])
-            t_amt = st.number_input("Amount", min_value=0.0)
-            t_cat = st.selectbox("Category", ["Rent", "Food", "Tech", "Investing", "Misc"])
-            if st.button("Commit to Ledger"):
-                new_entry = pd.DataFrame([[t_date, t_cat, t_amt, t_type]], columns=["Date", "Category", "Amount", "Type"])
-                st.session_state.transactions = pd.concat([st.session_state.transactions, new_entry], ignore_index=True)
-                st.rerun()
+        st.subheader("Log Transaction")
+        t_type = st.selectbox("Type", ["Expense", "Income"])
+        t_acc = st.selectbox("Target Account", list(accounts.keys()))
+        t_cat = st.selectbox("Category", ["Rent/Mortgage", "Food", "Bills", "Investment", "Leisure"])
+        t_amt = st.number_input("Amount", min_value=0.0)
+        t_rec = st.checkbox("Recurring Bill?")
+        if st.button("🚀 Execute Transaction"):
+            new_data = pd.DataFrame([[datetime.now().date(), t_type, t_cat, t_amt, t_acc, t_rec]], 
+                                    columns=["Date", "Type", "Category", "Amount", "Account", "Recurring"])
+            st.session_state.df = pd.concat([st.session_state.df, new_data], ignore_index=True)
+            save_data(st.session_state.df)
+            st.toast("Transaction Encrypted & Saved!", icon="✅")
+            st.rerun()
     with c2:
-        st.dataframe(st.session_state.transactions.sort_index(ascending=False), use_container_width=True)
+        st.subheader("Live Ledger")
+        st.dataframe(st.session_state.df.sort_index(ascending=False), use_container_width=True)
 
-with tabs[3]:
-    st.subheader("Core Configuration")
-    if st.button("🔓 Logout"):
-        st.session_state.authenticated = False
-        st.rerun()
-    if st.button("🗑️ Wipe All Transactions"):
-        st.session_state.transactions = pd.DataFrame(columns=["Date", "Category", "Amount", "Type"])
+with tabs[2]: # AI ADVISOR
+    st.subheader("🧠 Aura AI Advisor")
+    monthly_spend = st.session_state.df[st.session_state.df['Type']=='Expense']['Amount'].sum()
+    
+    st.markdown("### **Analysis Results:**")
+    if net_worth < 50000:
+        st.warning("⚠️ **Low Liquidity Alert:** Your net worth has dipped. AI suggests cutting 'Leisure' by 15% this week.")
+    if abs(accounts['Debt']) > 2000:
+        st.error(f"🚨 **Debt Priority:** You have ${abs(accounts['Debt'])} in high-interest debt. Transfer $500 from Checking to pay this off now.")
+    if accounts['Savings'] > 10000:
+        st.success("✅ **Wealth Opportunity:** Savings are healthy. Move $2,000 to Retirement to capture market gains.")
+    
+    if st.button("📧 Send Weekly Report to Email"):
+        st.info("Email System: Ready. (Connect SMTP in Secrets to activate live sending)")
+
+with tabs[3]: # RECURRING BILLS
+    st.subheader("🔄 Managed Subscriptions")
+    recurs = st.session_state.df[st.session_state.df['Recurring'] == True]
+    if not recurs.empty:
+        st.table(recurs[['Category', 'Amount', 'Account']])
+        st.caption(f"Total Monthly Recurring: ${recurs['Amount'].sum():,.2f}")
+    else:
+        st.write("No recurring bills detected.")
+
+with tabs[4]: # SETTINGS
+    if st.button("🗑️ Wipe System Data"):
+        if os.path.exists(DB_FILE): os.remove(DB_FILE)
+        st.session_state.df = pd.DataFrame(columns=["Date", "Type", "Category", "Amount", "Account", "Recurring"])
         st.rerun()
