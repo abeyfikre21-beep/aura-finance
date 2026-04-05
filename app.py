@@ -3,7 +3,7 @@ import pandas as pd
 import os
 from datetime import datetime
 
-# --- 1. SETTINGS & ADVANCED LAYOUT CSS ---
+# --- 1. SETTINGS & HIERARCHICAL CSS ---
 st.set_page_config(page_title="Aura Finance", page_icon="🏛️", layout="wide")
 
 st.markdown("""
@@ -12,106 +12,109 @@ st.markdown("""
     .stApp { background-color: #02060E; color: #FFFFFF; }
     [data-testid="stSidebar"] { background-color: #010409 !important; border-right: 1px solid #D4AF37; }
     
-    /* Grid Card Styling */
-    .info-card {
-        background: #0D1526; padding: 22px; border-radius: 15px;
-        border: 1px solid #1C2C4E; text-align: left;
-        margin-bottom: 20px; min-height: 140px;
-        display: flex; flex-direction: column; justify-content: center;
+    /* --- MAIN HERO CARDS (BIG & BOLD) --- */
+    .hero-card {
+        background: linear-gradient(145deg, #0D1526, #16223D); 
+        padding: 30px 15px; border-radius: 20px;
+        border: 1px solid #D4AF37; text-align: center; 
+        box-shadow: 0px 4px 15px rgba(212, 175, 55, 0.1);
+        margin-bottom: 20px;
     }
-    .card-label { font-size: 10px; color: #8E8E93; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 8px; font-weight: 700; }
-    .card-val { font-size: 22px; font-weight: 800; color: #FFFFFF; }
-    .card-sub { font-size: 12px; color: #D4AF37; margin-top: 5px; }
+    .hero-label { font-size: 12px; color: #8E8E93; text-transform: uppercase; letter-spacing: 3px; margin-bottom: 12px; font-weight: 700;}
+    .hero-val { font-size: 32px; font-weight: 900; color: #FFFFFF; }
     
-    /* Spacing between rows */
-    .row-spacer { margin-top: 30px; margin-bottom: 10px; border-bottom: 1px solid #1C2C4E; padding-bottom: 10px; color: #8E8E93; font-size: 12px; text-transform: uppercase; letter-spacing: 3px;}
+    /* --- DETAIL CARDS (SMALLER & SUBTLE) --- */
+    .detail-card {
+        background: #090F1C; padding: 12px; border-radius: 10px;
+        border: 1px solid #1C2C4E; text-align: left;
+        margin-bottom: 10px; min-height: 80px;
+    }
+    .detail-label { font-size: 9px; color: #6C757D; text-transform: uppercase; font-weight: 600; letter-spacing: 1px; }
+    .detail-val { font-size: 16px; font-weight: 700; color: #E0E0E0; margin-top: 4px; }
+    
+    .section-title { 
+        margin-top: 40px; margin-bottom: 15px; color: #8E8E93; 
+        font-size: 11px; text-transform: uppercase; letter-spacing: 4px; font-weight: 800;
+        text-align: center;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. PERSISTENCE ENGINE (RESTORE POINT ACTIVE) ---
+# --- 2. PERSISTENCE ENGINE ---
 def load_csv(file, columns):
     if os.path.exists(file): return pd.read_csv(file)
     df = pd.DataFrame(columns=columns)
     df.to_csv(file, index=False)
     return df
 
-# Initialize Data
 if 'acct_data' not in st.session_state:
-    if os.path.exists("aura_accounts.csv"): st.session_state.acct_data = pd.read_csv("aura_accounts.csv").iloc[0].to_dict()
-    else: st.session_state.acct_data = {"Checking": 5000.0, "Savings": 10000.0, "Retirement": 50000.0}
+    if os.path.exists("aura_accounts.csv"): 
+        st.session_state.acct_data = pd.read_csv("aura_accounts.csv").iloc[0].to_dict()
+    else: 
+        st.session_state.acct_data = {"Checking": 0.0, "Savings": 0.0, "Retirement": 0.0}
 
 st.session_state.debt_df = load_csv("aura_debt.csv", ["Name", "Balance"])
 st.session_state.exp_df = load_csv("aura_expenses.csv", ["Date", "Category", "Amount"])
 
-# --- 3. LIVE CALCULATIONS FOR NEW CARDS ---
-# Calculations based on standard budget assumptions (can be made dynamic later)
-w_budget = 1000.0
-m_budget = 4000.0
+# --- 3. MATH ---
+d_total = float(st.session_state.debt_df['Balance'].sum()) if not st.session_state.debt_df.empty else 0.0
+a_total = sum(st.session_state.acct_data.values())
+current_nw = a_total - d_total
 total_spent = st.session_state.exp_df['Amount'].sum() if not st.session_state.exp_df.empty else 0.0
-w_spent = st.session_state.exp_df[pd.to_datetime(st.session_state.exp_df['Date']) > (datetime.now() - pd.Timedelta(days=7))]['Amount'].sum() if not st.session_state.exp_df.empty else 0.0
-m_spent = st.session_state.exp_df[pd.to_datetime(st.session_state.exp_df['Date']).dt.month == datetime.now().month]['Amount'].sum() if not st.session_state.exp_df.empty else 0.0
-
-emergency_fund = st.session_state.acct_data['Savings'] * 0.5 # Example logic
-leftover = (st.session_state.acct_data['Checking'] - w_spent)
-after_budget_savings = leftover - 500 # Simulated "After Budget & Savings"
 
 # --- 4. NAVIGATION ---
 with st.sidebar:
     st.title("🏛️ AURA")
-    nav = st.radio("SELECT VIEW", ["📊 Dashboard", "💰 Assets", "💳 Debt Portfolio", "🗓️ Weekly Budget", "📅 Monthly Budget", "📈 Insights & History", "🤖 Assistant", "👤 Profile", "🎨 Appearance"])
+    nav = st.radio("SELECT VIEW", [
+        "📊 Dashboard", "💰 Assets (Wealth)", "💳 Debt Portfolio", 
+        "🗓️ Weekly Budget", "📅 Monthly Budget", "📈 Insights & History", 
+        "🤖 Assistant", "👤 Profile", "🎨 Appearance"
+    ])
 
-# --- 5. DASHBOARD GRID (ONE CHOICE AT A TIME) ---
+# --- 5. DASHBOARD ---
 if nav == "📊 Dashboard":
-    st.title("Executive Command")
+    # 🏆 THE MAIN EVENT (LARGE CARDS)
+    st.markdown('<div class="section-title">Principal Financial Status</div>', unsafe_allow_html=True)
+    h1, h2, h3, h4, h5 = st.columns(5)
     
-    # --- ROW 1: THE BIG PICTURE ---
-    st.markdown('<div class="row-spacer">Cash Flow Status</div>', unsafe_allow_html=True)
-    c1, c2, c3 = st.columns(3)
+    def draw_hero(col, l, v, c="#FFFFFF"):
+        col.markdown(f'<div class="hero-card"><div class="hero-label">{l}</div><div class="hero-val" style="color:{c}">${v:,.0f}</div></div>', unsafe_allow_html=True)
+
+    draw_hero(h1, "Net Worth", current_nw, "#D4AF37")
+    draw_hero(h2, "Checking", st.session_state.acct_data['Checking'])
+    draw_hero(h3, "Savings", st.session_state.acct_data['Savings'])
+    draw_hero(h4, "Retirement Fund", st.session_state.acct_data['Retirement'])
+    draw_hero(h5, "Total Debt", d_total, "#FF5252")
+
+    # 📉 THE SECONDARY DETAILS (SMALLER CARDS)
+    st.markdown('<div class="section-title">Budgetary Metrics & Flow</div>', unsafe_allow_html=True)
     
-    def draw_card(col, label, val, sub=""):
-        col.markdown(f"""
-            <div class="info-card">
-                <div class="card-label">{label}</div>
-                <div class="card-val">${val:,.0f}</div>
-                <div class="card-sub">{sub}</div>
-            </div>
-        """, unsafe_allow_html=True)
+    def draw_detail(col, l, v):
+        col.markdown(f'<div class="detail-card"><div class="detail-label">{l}</div><div class="detail-val">${v:,.0f}</div></div>', unsafe_allow_html=True)
 
-    draw_card(c1, "Left To Spend (After Budget/Savings)", after_budget_savings, "Safe to use")
-    draw_card(c2, "Total Money Spent", total_spent, "All-time history")
-    draw_card(c3, "Leftover Money", leftover, "Unallocated in Checking")
+    # 4-Column Grid for details to make them more compact
+    d1, d2, d3, d4 = st.columns(4)
+    draw_detail(d1, "Left To Spend", (st.session_state.acct_data['Checking'] * 0.4))
+    draw_detail(d2, "Total Spent", total_spent)
+    draw_detail(d3, "Weekly Budget", 1000)
+    draw_detail(d4, "Weekly Spent", 0)
 
-    # --- ROW 2: BUDGET VS ACTUAL ---
-    st.markdown('<div class="row-spacer">Budget Performance</div>', unsafe_allow_html=True)
-    b1, b2, b3, b4 = st.columns(4)
-    draw_card(b1, "Weekly Budget", w_budget)
-    draw_card(b2, "Weekly Spent", w_spent, f"{int((w_spent/w_budget)*100)}% Used")
-    draw_card(b3, "Monthly Budget", m_budget)
-    draw_card(b4, "Monthly Spent", m_spent, f"{int((m_spent/m_budget)*100)}% Used")
+    d5, d6, d7, d8 = st.columns(4)
+    draw_detail(d5, "Monthly Budget", 4000)
+    draw_detail(d6, "Monthly Spent", 0)
+    draw_detail(d7, "Next Bill", 150)
+    draw_detail(d8, "Upcoming Bills", 2100)
 
-    # --- ROW 3: BILLS & OBLIGATIONS ---
-    st.markdown('<div class="row-spacer">Upcoming Obligations</div>', unsafe_allow_html=True)
-    f1, f2, f3 = st.columns(3)
-    draw_card(f1, "Next Bill", 120, "Internet - Due in 2 days")
-    draw_card(f2, "Upcoming Monthly Bills", 2150, "4 Bills remaining")
-    draw_card(f3, "Emergency Expense", 500, "Reserved for surprises")
+    d9, d10, d11, d12 = st.columns(4)
+    draw_detail(d9, "Emergency Expense", 500)
+    draw_detail(d10, "Leftover Money", 1200)
+    draw_detail(d11, "Recommendations", 0)
+    d12.empty() # Balanced spacing
 
-    # --- ROW 4: AI STRATEGY ---
-    st.markdown('<div class="row-spacer">Aura Strategy</div>', unsafe_allow_html=True)
-    draw_card(st, "AI Recommendations", 0, "Your savings rate is up 12%. Consider moving $400 to Retirement.")
-
-    # --- DATA SYNC ---
-    with st.expander("🛠️ SYNC CORE BALANCES"):
-        with st.form("sync"):
-            ch = st.number_input("Checking", value=float(st.session_state.acct_data['Checking']))
-            sa = st.number_input("Savings", value=float(st.session_state.acct_data['Savings']))
-            if st.form_submit_button("Update Balances"):
-                st.session_state.acct_data['Checking'] = ch
-                st.session_state.acct_data['Savings'] = sa
-                pd.DataFrame([st.session_state.acct_data]).to_csv("aura_accounts.csv", index=False)
-                st.rerun()
-
-# --- OTHER PAGES (PERSISTENT & UNTOUCHED) ---
-elif nav == "💳 Debt Portfolio":
-    st.title("Debt Portfolio")
-    # ... [Existing Debt Code Unchanged]
+    # --- NO DATA LOST: SYNC STILL HERE ---
+    st.markdown("---")
+    with st.expander("🛠️ UPDATE PRINCIPAL BALANCES"):
+        with st.form("edit_main"):
+            c1, c2, c3 = st.columns(3)
+            nc = c1.number_input("Checking", value=float
+            
