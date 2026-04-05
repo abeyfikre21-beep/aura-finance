@@ -4,7 +4,25 @@ import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
-# --- 1. PREMIUM CONFIG ---
+# --- 1. SECURITY LAYER ---
+# Change '1234' to any PIN you want!
+USER_PIN = "1234" 
+
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    st.title("🔒 Aura Finance Secure Login")
+    pin_input = st.text_input("Enter your 4-digit PIN", type="password")
+    if st.button("Unlock Dashboard"):
+        if pin_input == USER_PIN:
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("Access Denied: Incorrect PIN")
+    st.stop() # Stops the rest of the app from loading until logged in
+
+# --- 2. PREMIUM CONFIG (Appears only after login) ---
 st.set_page_config(page_title="Aura Finance Pro", layout="wide")
 
 st.markdown("""
@@ -15,36 +33,33 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATA PERSISTENCE ---
+# --- 3. DATA PERSISTENCE ---
 if 'transactions' not in st.session_state:
     st.session_state.transactions = pd.DataFrame(columns=["Date", "Category", "Amount", "Type"])
 
-# Base accounts (Edit these to your real starting balances)
 starting_balance = 50000 
-
-# Calculate Real-Time Net Worth
 total_spent = st.session_state.transactions[st.session_state.transactions['Type'] == 'Expense']['Amount'].sum()
 total_earned = st.session_state.transactions[st.session_state.transactions['Type'] == 'Income']['Amount'].sum()
 live_net_worth = starting_balance + total_earned - total_spent
 
-# --- 3. EXECUTIVE HEADER ---
+# --- 4. EXECUTIVE HEADER ---
 st.title("🏛️ Aura Executive Command")
-st.caption(f"Real-Time Intelligence | {datetime.now().strftime('%Y-%m-%d')}")
+st.caption(f"Secure Session | {datetime.now().strftime('%Y-%m-%d')}")
 
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Live Net Worth", f"${live_net_worth:,.2f}")
 m2.metric("Monthly Burn", f"${total_spent:,.2f}")
-health_score = int(max(0, min(100, (live_net_worth / 1000)))) # Dynamic score logic
+health_score = int(max(0, min(100, (live_net_worth / 1000)))) 
 m3.metric("Health Score", f"{health_score}/100")
 m4.metric("Status", "Operational" if health_score > 50 else "Watchlist")
 
-# --- 4. THE UPGRADE TABS ---
+# --- 5. THE UPGRADE TABS ---
 tabs = st.tabs(["🚀 Wealth Forecast", "🧪 Scenario Lab", "💸 Transactions", "⚙️ Settings"])
 
 with tabs[0]:
     st.subheader("Predictive Wealth Trajectory")
     months = 12
-    avg_monthly_gain = 1200 # Default assumption
+    avg_monthly_gain = 1200 
     dates = [datetime.now() + timedelta(days=30*i) for i in range(months)]
     forecast = [live_net_worth + (avg_monthly_gain * i) for i in range(months)]
     
@@ -55,21 +70,14 @@ with tabs[0]:
 
 with tabs[1]:
     st.subheader("🧪 Financial Scenario Simulator")
-    st.write("Adjust the sliders to see how life decisions impact your future wealth.")
-    
     col_a, col_b = st.columns(2)
     with col_a:
-        one_time_cost = st.slider("One-time Purchase (e.g. Car/Gift)", 0, 50000, 0, step=500)
-        monthly_cut = st.slider("Monthly Budget Cut (Savings)", 0, 2000, 0, step=50)
-    
+        one_time_cost = st.slider("One-time Purchase", 0, 50000, 0, step=500)
+        monthly_cut = st.slider("Monthly Budget Cut", 0, 2000, 0, step=50)
     with col_b:
-        # Scenario Logic
         new_nw = live_net_worth - one_time_cost
         new_forecast = [new_nw + ((avg_monthly_gain + monthly_cut) * i) for i in range(months)]
-        
         st.metric("New Projected NW (12mo)", f"${new_forecast[-1]:,.2f}", delta=f"${new_forecast[-1] - forecast[-1]:,.2f}")
-        if one_time_cost > live_net_worth:
-            st.error("⚠️ This purchase exceeds your current liquid assets!")
 
 with tabs[2]:
     st.subheader("Transaction Ledger")
@@ -89,7 +97,9 @@ with tabs[2]:
 
 with tabs[3]:
     st.subheader("Core Configuration")
-    st.write("Manage your app's DNA here.")
+    if st.button("🔓 Logout"):
+        st.session_state.authenticated = False
+        st.rerun()
     if st.button("🗑️ Wipe All Transactions"):
         st.session_state.transactions = pd.DataFrame(columns=["Date", "Category", "Amount", "Type"])
         st.rerun()
