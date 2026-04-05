@@ -40,13 +40,11 @@ if not os.path.exists(IMG_DIR): os.makedirs(IMG_DIR)
 def load_data():
     if os.path.exists(DB_FILE):
         df = pd.read_csv(DB_FILE)
-        # CRITICAL FIX: errors='coerce' handles any messy data and ensures they are Datetime objects
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
         if 'Receipt' not in df.columns: df['Receipt'] = "None"
         return df
     return pd.DataFrame(columns=["Date", "Type", "Category", "Amount", "Account", "Receipt"])
 
-# Force data refresh to fix the error
 st.session_state.df = load_data()
 
 # --- 3. SIDEBAR CONFIGS ---
@@ -91,5 +89,13 @@ tabs = st.tabs(["💸 Log", "📊 Stats", "📈 Markets", "🧠 AI", "⚙️"])
 with tabs[0]: # LOG TAB
     st.subheader("New Entry")
     t_type = st.radio("Type", ["Expense", "Income"], horizontal=True)
-    t_amt = st.number_input("Amount", min_value=0.0)
-    t_
+    t_amt = st.number_input("Amount", min_value=0.0, key="amt_input")
+    t_cat = st.selectbox("Category", ["Food", "Invest", "Bills", "Leisure", "Housing", "Transport"])
+    t_acc = st.selectbox("Account", list(accounts.keys()))
+    
+    # Live Budget Warning
+    if t_type == "Expense" and t_cat in BUDGETS:
+        current_month = datetime.now().strftime('%Y-%m')
+        df = st.session_state.df
+        if not df.empty:
+            mask = (df['Category'] == t_cat) & (df['Date'].dt.strftime('%Y
