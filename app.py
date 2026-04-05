@@ -15,6 +15,8 @@ st.markdown("""
     [data-testid="stMetricValue"] { font-size: 30px !important; font-weight: 800 !important; color: #D4AF37 !important; }
     div[data-testid="stMetric"] { background: rgba(28, 28, 30, 0.6); border: 1px solid rgba(212, 175, 55, 0.2); padding: 15px; border-radius: 15px; }
     .stTabs [aria-selected="true"] { background-color: #D4AF37 !important; color: black !important; }
+    /* Goal Bar Color */
+    .stProgress > div > div > div > div { background-color: #D4AF37; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -41,7 +43,10 @@ def load_data():
 
 if 'df' not in st.session_state: st.session_state.df = load_data()
 
-# --- 3. MARKET ENGINE ---
+# --- 3. GOAL & MARKET SETTINGS ---
+st.sidebar.title("🎯 Wealth Goals")
+NW_GOAL = st.sidebar.number_input("Net Worth Target ($)", value=100000, step=5000)
+
 st.sidebar.title("📈 Watchlist")
 ticker_input = st.sidebar.text_input("Tickers", "AAPL, TSLA, BTC-USD")
 tickers = [t.strip().upper() for t in ticker_input.split(",")]
@@ -52,10 +57,19 @@ for _, row in st.session_state.df.iterrows():
     val = row['Amount'] if row['Type'] == 'Income' else -row['Amount']
     if row['Account'] in accounts: accounts[row['Account']] += val
 
-# --- 5. DASHBOARD ---
+total_nw = sum(accounts.values())
+
+# --- 5. EXECUTIVE DASHBOARD ---
 st.title("🏛️ Aura Executive")
+st.caption("Private Wealth Management")
+
+# Goal Progress Bar
+progress_pct = min(total_nw / NW_GOAL, 1.0)
+st.write(f"**Wealth Milestone Progress:** ${total_nw:,.0f} / ${NW_GOAL:,.0f} ({progress_pct*100:.1f}%)")
+st.progress(progress_pct)
+
 c1, c2, c3 = st.columns(3)
-c1.metric("Net Worth", f"${sum(accounts.values()):,.0f}")
+c1.metric("Net Worth", f"${total_nw:,.0f}")
 c2.metric("Liquid Cash", f"${accounts['Checking'] + accounts['Savings']:,.0f}")
 c3.metric("Investments", f"${accounts['Retirement']:,.0f}")
 
@@ -76,7 +90,6 @@ with tabs[0]:
 with tabs[1]:
     exp_df = st.session_state.df[st.session_state.df['Type']=='Expense']
     if not exp_df.empty:
-        # FIXED: Color codes are now fully terminated
         fig = px.pie(exp_df, values='Amount', names='Category', hole=0.7, 
                      color_discrete_sequence=['#D4AF37', '#1c1c1e', '#C0C0C0'])
         fig.update_layout(showlegend=False, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)')
@@ -89,7 +102,6 @@ with tabs[2]:
         try:
             hist = yf.download(sel, period="1mo", interval="1d")
             if not hist.empty:
-                # Clean column headers
                 hist.columns = [col[0] if isinstance(col, tuple) else col for col in hist.columns]
                 fig_stock = px.line(hist, y="Close", title=f"{sel} (30D)", template="plotly_dark")
                 fig_stock.update_traces(line_color='#D4AF37')
