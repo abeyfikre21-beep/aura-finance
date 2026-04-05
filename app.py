@@ -13,6 +13,8 @@ st.markdown("""
     .stApp { background-color: #050505; color: #FFFFFF; }
     header { visibility: hidden; }
     section[data-testid="stSidebar"] { background-color: #121212 !important; border-right: 1px solid #D4AF37; }
+    
+    /* Metric Cards */
     div[data-testid="stMetric"] {
         background: rgba(28, 28, 30, 0.9);
         border: 1px solid rgba(212, 175, 55, 0.3);
@@ -20,6 +22,7 @@ st.markdown("""
         padding: 15px;
     }
     [data-testid="stMetricValue"] { color: #D4AF37 !important; font-weight: 800 !important; }
+    
     .hero {
         background: linear-gradient(180deg, #1c1c1e, #050505);
         padding: 30px;
@@ -27,6 +30,14 @@ st.markdown("""
         text-align: center;
         border: 1px solid rgba(212, 175, 55, 0.1);
         margin-bottom: 20px;
+    }
+    
+    /* Button Styling */
+    .stButton>button {
+        background-color: #D4AF37 !important;
+        color: black !important;
+        border-radius: 10px !important;
+        font-weight: bold !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -41,8 +52,8 @@ def load_data():
             df['Date'] = pd.to_datetime(df['Date'])
             return df
         except:
-            return pd.DataFrame(columns=["Date", "Category", "Amount", "Period", "Account"])
-    return pd.DataFrame(columns=["Date", "Category", "Amount", "Period", "Account"])
+            return pd.DataFrame(columns=["Date", "Category", "Amount", "Period"])
+    return pd.DataFrame(columns=["Date", "Category", "Amount", "Period"])
 
 if 'df' not in st.session_state:
     st.session_state.df = load_data()
@@ -51,13 +62,12 @@ if 'df' not in st.session_state:
 with st.sidebar:
     st.title("🏛️ Aura Menu")
     st.markdown("---")
-    st.markdown("👤 **Profile**")
     view_mode = st.radio("View Cycle", ["Weekly", "Monthly"])
     target = st.number_input(f"Target {view_mode} Budget", value=1200 if view_mode == "Weekly" else 4500)
     st.markdown("---")
     if st.button("🗑️ Reset All Data"):
         if os.path.exists(DB_FILE): os.remove(DB_FILE)
-        st.session_state.df = pd.DataFrame(columns=["Date", "Category", "Amount", "Period", "Account"])
+        st.session_state.df = pd.DataFrame(columns=["Date", "Category", "Amount", "Period"])
         st.rerun()
 
 # --- 4. CALCULATIONS ---
@@ -71,7 +81,6 @@ else:
     start_date = today.replace(day=1)
     label = "This Month"
 
-# Filter current data
 current_data = df[df['Date'] >= pd.to_datetime(start_date)]
 total_spent = current_data['Amount'].sum() if not current_data.empty else 0.0
 remaining = target - total_spent
@@ -87,12 +96,14 @@ st.markdown(f"""
     </div>
     """, unsafe_allow_html=True)
 
-tabs = st.tabs(["💸 Log Expense", "📂 Expense Vault", "📊 Insights"])
+tabs = st.tabs(["💸 Log", "📂 Vault", "📊 Insights"])
 
-with tabs[0]: 
+with tabs[0]: # FIXED LOGGING BLOCK
     st.subheader("New Entry")
     cat = st.selectbox("Category", ["Housing", "Insurance", "Car", "Groceries", "Gas", "Phone", "Gym", "Subscription", "Other"])
     amt = st.number_input("Amount Paid ($)", min_value=0.0, step=0.01)
     date_entry = st.date_input("Transaction Date", datetime.now())
     
-    if
+    if st.button("🚀 Secure Entry", use_container_width=True):
+        if amt > 0:
+            new_entry = pd
