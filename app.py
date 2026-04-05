@@ -40,12 +40,14 @@ if not os.path.exists(IMG_DIR): os.makedirs(IMG_DIR)
 def load_data():
     if os.path.exists(DB_FILE):
         df = pd.read_csv(DB_FILE)
-        df['Date'] = pd.to_datetime(df['Date'])
+        # CRITICAL FIX: errors='coerce' handles any messy data and ensures they are Datetime objects
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
         if 'Receipt' not in df.columns: df['Receipt'] = "None"
         return df
     return pd.DataFrame(columns=["Date", "Type", "Category", "Amount", "Account", "Receipt"])
 
-if 'df' not in st.session_state: st.session_state.df = load_data()
+# Force data refresh to fix the error
+st.session_state.df = load_data()
 
 # --- 3. SIDEBAR CONFIGS ---
 st.sidebar.title("🎯 Wealth Goals")
@@ -66,14 +68,15 @@ tickers = [t.strip().upper() for t in ticker_input.split(",")]
 # --- 4. ACCOUNT TOTALS ---
 accounts = {"Checking": 5000, "Savings": 15000, "Retirement": 45000, "Debt": -2500}
 for _, row in st.session_state.df.iterrows():
-    val = row['Amount'] if row['Type'] == 'Income' else -row['Amount']
-    if row['Account'] in accounts: accounts[row['Account']] += val
+    if pd.notnull(row['Amount']):
+        val = row['Amount'] if row['Type'] == 'Income' else -row['Amount']
+        if row['Account'] in accounts: accounts[row['Account']] += val
 
 total_nw = sum(accounts.values())
 
 # --- 5. EXECUTIVE DASHBOARD ---
 st.title("🏛️ Aura Executive")
-progress_pct = min(total_nw / NW_GOAL, 1.0)
+progress_pct = min(total_nw / NW_GOAL, 1.0) if NW_GOAL > 0 else 0
 st.write(f"**Wealth Progress:** ${total_nw:,.0f} / ${NW_GOAL:,.0f}")
 st.progress(progress_pct)
 
@@ -89,82 +92,4 @@ with tabs[0]: # LOG TAB
     st.subheader("New Entry")
     t_type = st.radio("Type", ["Expense", "Income"], horizontal=True)
     t_amt = st.number_input("Amount", min_value=0.0)
-    t_cat = st.selectbox("Category", ["Food", "Invest", "Bills", "Leisure", "Housing", "Transport"])
-    t_acc = st.selectbox("Account", list(accounts.keys()))
-    
-    # Live Budget Warning
-    if t_type == "Expense" and t_cat in BUDGETS:
-        current_month = datetime.now().strftime('%Y-%m')
-        spent = st.session_state.df[(st.session_state.df['Category'] == t_cat) & 
-                                   (st.session_state.df['Date'].dt.strftime('%Y-%m') == current_month)]['Amount'].sum()
-        remaining = BUDGETS[t_cat] - spent
-        if remaining > 0:
-            st.caption(f"🛡️ Budget Remaining for {t_cat}: **${remaining:,.2f}**")
-        else:
-            st.error(f"⚠️ Warning: You are **${abs(remaining):,.2f}** over your {t_cat} budget!")
-
-    receipt_file = st.file_uploader("Capture Receipt", type=['jpg', 'png', 'jpeg'])
-    
-    if st.button("🚀 Commit Transaction", use_container_width=True):
-        img_path = "None"
-        if receipt_file:
-            img_path = f"{IMG_DIR}/{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-            img = Image.open(receipt_file)
-            img.save(img_path)
-            
-        new_row = pd.DataFrame([[pd.to_datetime(datetime.now().date()), t_type, t_cat, t_amt, t_acc, img_path]], 
-                               columns=st.session_state.df.columns)
-        st.session_state.df = pd.concat([st.session_state.df, new_row], ignore_index=True)
-        st.session_state.df.to_csv(DB_FILE, index=False)
-        st.rerun()
-
-with tabs[1]: # STATS TAB
-    st.subheader("Budget vs. Reality")
-    # Budget Chart
-    current_month = datetime.now().strftime('%Y-%m')
-    actuals = st.session_state.df[st.session_state.df['Date'].dt.strftime('%Y-%m') == current_month].groupby('Category')['Amount'].sum()
-    
-    compare_data = []
-    for cat, limit in BUDGETS.items():
-        compare_data.append({"Category": cat, "Type": "Budget", "Amount": limit})
-        compare_data.append({"Category": cat, "Type": "Actual", "Amount": actuals.get(cat, 0)})
-    
-    if compare_data:
-        fig_b = px.bar(pd.DataFrame(compare_data), x="Category", y="Amount", color="Type", 
-                      barmode="group", template="plotly_dark", color_discrete_map={"Budget": "#1c1c1e", "Actual": "#D4AF37"})
-        st.plotly_chart(fig_b, use_container_width=True)
-
-    for i, row in st.session_state.df.sort_index(ascending=False).head(10).iterrows():
-        with st.expander(f"{row['Date'].strftime('%m/%d')} - {row['Category']}: ${row['Amount']}"):
-            if row['Receipt'] != "None" and os.path.exists(str(row['Receipt'])):
-                st.image(row['Receipt'])
-
-with tabs[2]: # MARKETS TAB
-    sel = st.selectbox("Select Asset", tickers)
-    if sel:
-        try:
-            hist = yf.download(sel, period="1mo", interval="1d")
-            if not hist.empty:
-                hist.columns = [col[0] if isinstance(col, tuple) else col for col in hist.columns]
-                fig_stock = px.line(hist, y="Close", template="plotly_dark")
-                fig_stock.update_traces(line_color='#D4AF37')
-                st.plotly_chart(fig_stock, use_container_width=True)
-        except: st.error("Market Sync Error")
-
-with tabs[3]: # AI TAB
-    st.subheader("🔮 Aura Forecast")
-    df = st.session_state.df
-    if not df.empty:
-        df['Month'] = df['Date'].dt.strftime('%b %Y')
-        summary = df.groupby(['Month', 'Type'])['Amount'].sum().unstack(fill_value=0)
-        if 'Income' in summary and 'Expense' in summary:
-            avg_savings = (summary['Income'] - summary['Expense']).mean()
-            if avg_savings > 0:
-                months = (NW_GOAL - total_nw) / avg_savings
-                st.success(f"💎 **Financial Path:** Hitting ${NW_GOAL:,.0f} in **{months:.1f} months**.")
-            else: st.warning("Burn rate exceeds income. Adjust budgets to stay on track.")
-
-with tabs[4]: # SYSTEM
-    if st.button("Logout"): 
-        st.session_state.auth = False
-        st.rerun()
+    t_
