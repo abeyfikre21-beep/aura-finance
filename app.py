@@ -76,20 +76,4 @@ with tabs[0]:
 with tabs[1]:
     exp_df = st.session_state.df[st.session_state.df['Type']=='Expense']
     if not exp_df.empty:
-        fig = px.pie(exp_df, values='Amount', names='Category', hole=0.7, color_discrete_sequence=['#D4AF37', '#1c1c1e'])
-        fig.update_layout(showlegend=False, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig, use_container_width=True)
-    st.dataframe(st.session_state.df.sort_index(ascending=False), use_container_width=True)
-
-with tabs[2]:
-    sel = st.selectbox("Select Asset", tickers)
-    if sel:
-        try:
-            # Fix: Added 'auto_adjust=True' and column flattening
-            hist = yf.download(sel, period="1mo", interval="1d")
-            
-            if not hist.empty:
-                # This line fixes the 'Value of y' error by simplifying the column names
-                hist.columns = [col[0] if isinstance(col, tuple) else col for col in hist.columns]
-                
-                fig_stock = px.line(hist
+        fig = px.pie(exp_df, values='Amount', names='Category', hole=0.7, color_discrete_sequence=['#D4AF37', '#1c1
