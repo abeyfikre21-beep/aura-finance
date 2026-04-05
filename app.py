@@ -84,7 +84,7 @@ c2.metric("Liquid Cash", f"${accounts['Checking'] + accounts['Savings']:,.0f}")
 c3.metric("Investments", f"${accounts['Retirement']:,.0f}")
 
 # --- 6. NAVIGATION ---
-tabs = st.tabs(["💸 Log", "📊 Stats", "📈 Markets", "🧠 AI", "⚙️"])
+tabs = st.tabs(["💸 Log", "📊 Stats", "📈 Markets", "🧠 AI", "⚙️ System"])
 
 with tabs[0]: # LOG TAB
     st.subheader("New Entry")
@@ -95,7 +95,6 @@ with tabs[0]: # LOG TAB
     
     # Live Budget Warning
     if t_type == "Expense" and t_cat in BUDGETS:
-        current_month = datetime.now().strftime('%Y-%m')
-        df = st.session_state.df
-        if not df.empty:
-            mask = (df['Category'] == t_cat) & (df['Date'].dt.strftime('%Y
+        curr_mo = datetime.now().strftime('%Y-%m')
+        df_temp = st.session_state.df
+        if not df_temp.empty
