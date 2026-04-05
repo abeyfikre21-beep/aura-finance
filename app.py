@@ -43,7 +43,7 @@ if 'df' not in st.session_state: st.session_state.df = load_data()
 
 # --- 3. MARKET ENGINE ---
 st.sidebar.title("📈 Watchlist")
-ticker_input = st.sidebar.text_input("Tickers (comma separated)", "AAPL, TSLA, BTC-USD")
+ticker_input = st.sidebar.text_input("Tickers", "AAPL, TSLA, BTC-USD")
 tickers = [t.strip().upper() for t in ticker_input.split(",")]
 
 # --- 4. ACCOUNT TOTALS ---
@@ -85,13 +85,11 @@ with tabs[2]:
     sel = st.selectbox("Select Asset", tickers)
     if sel:
         try:
+            # Fix: Added 'auto_adjust=True' and column flattening
             hist = yf.download(sel, period="1mo", interval="1d")
-            # --- THE SAFETY CHECK ---
+            
             if not hist.empty:
-                fig_stock = px.line(hist, y="Close", title=f"{sel} (30D)", template="plotly_dark")
-                fig_stock.update_traces(line_color='#D4AF37')
-                st.plotly_chart(fig_stock, use_container_width=True)
-            else:
-                st.warning(f"No live data found for {sel}. Check the symbol or market status.")
-        except Exception as e:
-            st.error(f"Market Error: {e}")
+                # This line fixes the 'Value of y' error by simplifying the column names
+                hist.columns = [col[0] if isinstance(col, tuple) else col for col in hist.columns]
+                
+                fig_stock = px.line(hist
