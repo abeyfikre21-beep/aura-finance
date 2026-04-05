@@ -9,7 +9,7 @@ st.set_page_config(page_title="Aura Finance", page_icon="🏛️", layout="wide"
 
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Playfair+Display:wght@700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
     .stApp { background-color: #02060E; color: #FFFFFF; }
     [data-testid="stSidebar"] { background-color: #010409 !important; border-right: 1px solid #D4AF37; }
     
@@ -18,6 +18,7 @@ st.markdown("""
     .metric-card {
         background: #0D1526; padding: 20px; border-radius: 15px;
         border: 1px solid #1C2C4E; text-align: center; margin-bottom: 15px;
+        min-height: 100px;
     }
     .hero-label { font-size: 10px; color: #8E8E93; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 8px;}
     .hero-val { font-size: 22px; font-weight: 800; color: #FFFFFF; }
@@ -63,16 +64,4 @@ with st.sidebar:
     st.subheader("🏦 Account Balances")
     val_checking = st.number_input("Checking", value=8450)
     val_savings = st.number_input("Savings", value=25000)
-    val_retire = st.number_input("Retirement", value=142000)
-    
-    total_debt = st.session_state.debt['Balance'].sum() if not st.session_state.debt.empty else 0
-    net_worth = (val_checking + val_savings + val_retire) - total_debt
-
-# --- 4. PAGE: DASHBOARD ---
-if page == "Dashboard":
-    st.title("Executive Dashboard")
-    
-    # TOP HERO ROW
-    h1, h2, h3, h4, h5 = st.columns(5)
-    with h1: st.markdown(f'<div class="metric-card"><div class="hero-label">Net Worth</div><div class="hero-val">${net_worth:,.0f}</div></div>', unsafe_allow_html=True)
-    with h2: st.markdown(f'<div class="metric-card"><div class
+    val_retire = st
