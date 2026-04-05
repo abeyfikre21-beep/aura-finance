@@ -87,18 +87,49 @@ if nav == "📊 Dashboard":
 
     st.markdown('<div class="section-title">Budgetary Metrics & Flow</div>', unsafe_allow_html=True)
     
-    # FIXED FUNCTION BELOW
     def draw_detail(col, l, v):
         col.markdown(f'<div class="detail-card"><div class="detail-label">{l}</div><div class="detail-val">${v:,.0f}</div></div>', unsafe_allow_html=True)
 
+    # Row 1
     d_row1 = st.columns(4)
     draw_detail(d_row1[0], "Left To Spend", (st.session_state.acct_data['Checking'] * 0.4))
     draw_detail(d_row1[1], "Total Spent", total_spent)
     draw_detail(d_row1[2], "Weekly Budget", 1000)
     draw_detail(d_row1[3], "Weekly Spent", 0)
 
+    # Row 2
     d_row2 = st.columns(4)
     draw_detail(d_row2[0], "Monthly Budget", 4000)
     draw_detail(d_row2[1], "Monthly Spent", 0)
     draw_detail(d_row2[2], "Next Bill", 150)
-    draw_detail(d_row
+    draw_detail(d_row2[3], "Upcoming Bills", 2100)
+
+    # Row 3
+    d_row3 = st.columns(3)
+    draw_detail(d_row3[0], "Emergency Expense", 500)
+    draw_detail(d_row3[1], "Leftover Money", 1200)
+    draw_detail(d_row3[2], "Recommendations", 0)
+
+    st.markdown("---")
+    with st.expander("🛠️ UPDATE PRINCIPAL BALANCES"):
+        with st.form("edit_main"):
+            edit_cols = st.columns(3)
+            nc = edit_cols[0].number_input("Checking", value=float(st.session_state.acct_data['Checking']))
+            ns = edit_cols[1].number_input("Savings", value=float(st.session_state.acct_data['Savings']))
+            nr = edit_cols[2].number_input("Retirement", value=float(st.session_state.acct_data['Retirement']))
+            if st.form_submit_button("Sync Everything"):
+                st.session_state.acct_data = {"Checking": nc, "Savings": ns, "Retirement": nr}
+                pd.DataFrame([st.session_state.acct_data]).to_csv("aura_accounts.csv", index=False)
+                st.rerun()
+
+# --- OTHER PAGES REMAIN PERSISTENT ---
+elif nav == "💳 Debt Portfolio":
+    st.title("Debt Portfolio")
+    with st.form("debt_adder", clear_on_submit=True):
+        dn = st.text_input("Lender")
+        db = st.number_input("Balance", min_value=0.0)
+        if st.form_submit_button("Save Debt"):
+            new_r = pd.DataFrame([{"Name": dn, "Balance": db}])
+            st.session_state.debt_df = pd.concat([st.session_state.debt_df, new_r], ignore_index=True)
+            st.session_state.debt_df.to_csv("aura_debt.csv", index=False)
+            st.rerun()
