@@ -71,9 +71,8 @@ with st.sidebar:
         "🤖 Assistant", "👤 Profile", "🎨 Appearance"
     ])
 
-# --- 5. DASHBOARD ---
+# --- 5. PAGE: DASHBOARD ---
 if nav == "📊 Dashboard":
-    # 🏆 THE MAIN EVENT (LARGE CARDS)
     st.markdown('<div class="section-title">Principal Financial Status</div>', unsafe_allow_html=True)
     h1, h2, h3, h4, h5 = st.columns(5)
     
@@ -86,35 +85,7 @@ if nav == "📊 Dashboard":
     draw_hero(h4, "Retirement Fund", st.session_state.acct_data['Retirement'])
     draw_hero(h5, "Total Debt", d_total, "#FF5252")
 
-    # 📉 THE SECONDARY DETAILS (SMALLER CARDS)
     st.markdown('<div class="section-title">Budgetary Metrics & Flow</div>', unsafe_allow_html=True)
     
     def draw_detail(col, l, v):
-        col.markdown(f'<div class="detail-card"><div class="detail-label">{l}</div><div class="detail-val">${v:,.0f}</div></div>', unsafe_allow_html=True)
-
-    # 4-Column Grid for details to make them more compact
-    d1, d2, d3, d4 = st.columns(4)
-    draw_detail(d1, "Left To Spend", (st.session_state.acct_data['Checking'] * 0.4))
-    draw_detail(d2, "Total Spent", total_spent)
-    draw_detail(d3, "Weekly Budget", 1000)
-    draw_detail(d4, "Weekly Spent", 0)
-
-    d5, d6, d7, d8 = st.columns(4)
-    draw_detail(d5, "Monthly Budget", 4000)
-    draw_detail(d6, "Monthly Spent", 0)
-    draw_detail(d7, "Next Bill", 150)
-    draw_detail(d8, "Upcoming Bills", 2100)
-
-    d9, d10, d11, d12 = st.columns(4)
-    draw_detail(d9, "Emergency Expense", 500)
-    draw_detail(d10, "Leftover Money", 1200)
-    draw_detail(d11, "Recommendations", 0)
-    d12.empty() # Balanced spacing
-
-    # --- NO DATA LOST: SYNC STILL HERE ---
-    st.markdown("---")
-    with st.expander("🛠️ UPDATE PRINCIPAL BALANCES"):
-        with st.form("edit_main"):
-            c1, c2, c3 = st.columns(3)
-            nc = c1.number_input("Checking", value=float
-            
+        col.markdown(f'<div class="detail
