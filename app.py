@@ -9,84 +9,44 @@ st.set_page_config(page_title="Aura Finance", page_icon="🏛️", layout="wide"
 
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Playfair+Display:wght@700&display=swap');
     .stApp { background-color: #02060E; color: #FFFFFF; }
     [data-testid="stSidebar"] { background-color: #010409 !important; border-right: 1px solid #D4AF37; }
     
-    /* Center Column Constraint for Desktop */
     @media (min-width: 1024px) {
         .main-container { max-width: 600px; margin: 0 auto; }
     }
 
-    /* High-Density Budget Card */
     .budget-card {
-        background: #0D1526; padding: 15px; border-radius: 12px;
-        border: 1px solid #1C2C4E; margin-bottom: 8px;
+        background: #0D1526; padding: 20px; border-radius: 15px;
+        border: 1px solid #1C2C4E; margin-bottom: 12px;
     }
-    .stat-label { font-size: 10px; color: #8E8E93; text-transform: uppercase; }
-    .stat-val { font-size: 16px; font-weight: 700; }
-    .status-tag { font-size: 10px; padding: 2px 8px; border-radius: 4px; font-weight: 800; }
-    
-    /* Input Compactness */
-    .stNumberInput div div input { padding: 5px !important; }
+    .stat-label { font-size: 10px; color: #8E8E93; text-transform: uppercase; letter-spacing: 1px; }
+    .stat-val { font-size: 18px; font-weight: 700; margin-top: 4px; }
+    .status-tag { font-size: 10px; padding: 3px 10px; border-radius: 6px; font-weight: 800; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. REBUILT DATA ENGINE ---
+# --- 2. DATA ENGINE ---
 DB_FILES = ["expenses", "budgets", "leftover", "debt"]
 
 def load_vault(key):
     file = f"aura_{key}.csv"
+    cols = {
+        "expenses": ["Date", "Category", "Amount", "Type"],
+        "budgets": ["Category", "Amount", "Type", "DueDay"],
+        "leftover": ["Date", "Source", "Amount", "Note"],
+        "debt": ["Name", "Balance", "Payment", "DueDay"]
+    }
     if os.path.exists(file):
         df = pd.read_csv(file)
         if 'Date' in df.columns: df['Date'] = pd.to_datetime(df['Date'])
         return df
-    return pd.DataFrame() # Return empty to handle dynamic column creation
+    return pd.DataFrame(columns=cols[key])
 
 for key in DB_FILES:
     if key not in st.session_state:
         st.session_state[key] = load_vault(key)
 
 def save_all():
-    for key in DB_FILES:
-        st.session_state[key].to_csv(f"aura_{key}.csv", index=False)
-
-# --- 3. PAGE LOGIC: WEEKLY ---
-def render_budget_page(type_label):
-    st.markdown(f"### {type_label} Command")
-    
-    # WRAP IN CENTER CONTAINER
-    st.markdown('<div class="main-container">', unsafe_allow_html=True)
-    
-    # QUICK ADD
-    with st.expander(f"➕ New {type_label}", expanded=False):
-        name = st.text_input("Name")
-        limit = st.number_input("Limit ($)", min_value=0.0)
-        if st.button("Add"):
-            new_row = pd.DataFrame([[name, limit, type_label, 1]], columns=["Category", "Amount", "Type", "DueDay"])
-            st.session_state.budgets = pd.concat([st.session_state.budgets, new_row], ignore_index=True)
-            save_all()
-            st.rerun()
-
-    st.markdown("---")
-
-    # THE ALL-IN-ONE LIST
-    items = st.session_state.budgets[st.session_state.budgets['Type'] == type_label]
-    
-    if items.empty:
-        st.info("No categories active.")
-    else:
-        for i, row in items.iterrows():
-            # Calculate Spent
-            if not st.session_state.expenses.empty:
-                spent = st.session_state.expenses[st.session_state.expenses['Category'] == row['Category']]['Amount'].sum()
-            else:
-                spent = 0
-            
-            rem = row['Amount'] - spent
-            status = "OVER" if rem < 0 else "OK"
-            status_color = "#FF5252" if rem < 0 else "#2ECC71"
-
-            with st.container():
-                st.markdown(f"""
-                <div class="budget-card">
+    for key in DB_
