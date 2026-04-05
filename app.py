@@ -44,9 +44,99 @@ def load_vault(key):
         return df
     return pd.DataFrame(columns=cols[key])
 
+# Initialize session state for all dataframes
 for key in DB_FILES:
     if key not in st.session_state:
         st.session_state[key] = load_vault(key)
 
 def save_all():
-    for key in DB_
+    for key in DB_FILES:
+        st.session_state[key].to_csv(f"aura_{key}.csv", index=False)
+
+# --- 3. CORE PAGE RENDERER ---
+def render_budget_page(type_label):
+    st.title(f"🏛️ {type_label} Budget")
+    
+    st.markdown('<div class="main-container">', unsafe_allow_html=True)
+    
+    with st.expander(f"➕ Add {type_label} Category", expanded=False):
+        name = st.text_input("Category Name")
+        limit = st.number_input("Limit Amount ($)", min_value=0.0, step=50.0)
+        if st.button("Create Category", use_container_width=True):
+            if name:
+                new_row = pd.DataFrame([[name, limit, type_label, 1]], columns=["Category", "Amount", "Type", "DueDay"])
+                st.session_state.budgets = pd.concat([st.session_state.budgets, new_row], ignore_index=True)
+                save_all()
+                st.rerun()
+
+    st.markdown("---")
+
+    # Filter budgets by current page type
+    items = st.session_state.budgets[st.session_state.budgets['Type'] == type_label]
+    
+    if items.empty:
+        st.info(f"No {type_label} categories defined yet.")
+    else:
+        for i, row in items.iterrows():
+            # Calculate total spent for this specific category
+            category_expenses = st.session_state.expenses[st.session_state.expenses['Category'] == row['Category']]
+            spent = category_expenses['Amount'].sum() if not category_expenses.empty else 0.0
+            
+            rem = row['Amount'] - spent
+            status = "OVER LIMIT" if rem < 0 else "ON TRACK"
+            status_color = "#FF5252" if rem < 0 else "#2ECC71"
+
+            # The Card UI
+            st.markdown(f"""
+            <div class="budget-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <span style="font-size: 20px; font-weight: 800; color: #D4AF37;">{row['Category']}</span>
+                    <span class="status-tag" style="background: {status_color}; color: white;">{status}</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+                    <div><div class="stat-label">Limit</div><div class="stat-val">${row['Amount']:,.0f}</div></div>
+                    <div><div class="stat-label">Spent</div><div class="stat-val">${spent:,.2f}</div></div>
+                    <div><div class="stat-label">Left</div><div class="stat-val" style="color:{status_color}">${rem:,.2f}</div></div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Action Row
+            c1, c2, c3 = st.columns([3, 2, 1])
+            add_val = c1.number_input("Amount", key=f"amt_{type_label}_{i}", min_value=0.0, label_visibility="collapsed")
+            if c2.button("Log Spend", key=f"log_{type_label}_{i}", use_container_width=True):
+                if add_val > 0:
+                    new_ex = pd.DataFrame([[datetime.now(), row['Category'], add_val, type_label]], columns=["Date", "Category", "Amount", "Type"])
+                    st.session_state.expenses = pd.concat([st.session_state.expenses, new_ex], ignore_index=True)
+                    save_all()
+                    st.rerun()
+            
+            if c3.button("🗑️", key=f"del_{type_label}_{i}"):
+                # Delete category and wipe its specific history
+                st.session_state.budgets = st.session_state.budgets.drop(i)
+                st.session_state.expenses = st.session_state.expenses[st.session_state.expenses['Category'] != row['Category']]
+                save_all()
+                st.rerun()
+            st.markdown("<br>", unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# --- 4. NAVIGATION ---
+with st.sidebar:
+    st.title("🏛️ AURA")
+    page = st.radio("MENU", ["Dashboard", "Monthly Budget", "Weekly Budget", "Debt", "Assistant"])
+    st.markdown("---")
+    l_bal = st.session_state.leftover['Amount'].sum() if not st.session_state.leftover.empty else 0
+    st.metric("LEFTOVER POOL", f"${l_bal:,.2f}")
+
+if page == "Weekly Budget":
+    render_budget_page("Weekly")
+elif page == "Monthly Budget":
+    render_budget_page("Monthly")
+elif page == "Dashboard":
+    st.subheader("Financial Command Center")
+    st.info("Log your budgets in the Weekly or Monthly sections to see insights here.")
+elif page == "Debt":
+    st.subheader("Debt Portfolio")
+elif page == "Assistant":
+    st.subheader("Aura AI Advisor")
