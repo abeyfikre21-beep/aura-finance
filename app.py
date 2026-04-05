@@ -74,18 +74,31 @@ with st.sidebar:
 # --- 5. PAGE: DASHBOARD ---
 if nav == "📊 Dashboard":
     st.markdown('<div class="section-title">Principal Financial Status</div>', unsafe_allow_html=True)
-    h1, h2, h3, h4, h5 = st.columns(5)
+    h_cols = st.columns(5)
     
     def draw_hero(col, l, v, c="#FFFFFF"):
         col.markdown(f'<div class="hero-card"><div class="hero-label">{l}</div><div class="hero-val" style="color:{c}">${v:,.0f}</div></div>', unsafe_allow_html=True)
 
-    draw_hero(h1, "Net Worth", current_nw, "#D4AF37")
-    draw_hero(h2, "Checking", st.session_state.acct_data['Checking'])
-    draw_hero(h3, "Savings", st.session_state.acct_data['Savings'])
-    draw_hero(h4, "Retirement Fund", st.session_state.acct_data['Retirement'])
-    draw_hero(h5, "Total Debt", d_total, "#FF5252")
+    draw_hero(h_cols[0], "Net Worth", current_nw, "#D4AF37")
+    draw_hero(h_cols[1], "Checking", st.session_state.acct_data['Checking'])
+    draw_hero(h_cols[2], "Savings", st.session_state.acct_data['Savings'])
+    draw_hero(h_cols[3], "Retirement Fund", st.session_state.acct_data['Retirement'])
+    draw_hero(h_cols[4], "Total Debt", d_total, "#FF5252")
 
     st.markdown('<div class="section-title">Budgetary Metrics & Flow</div>', unsafe_allow_html=True)
     
+    # FIXED FUNCTION BELOW
     def draw_detail(col, l, v):
-        col.markdown(f'<div class="detail
+        col.markdown(f'<div class="detail-card"><div class="detail-label">{l}</div><div class="detail-val">${v:,.0f}</div></div>', unsafe_allow_html=True)
+
+    d_row1 = st.columns(4)
+    draw_detail(d_row1[0], "Left To Spend", (st.session_state.acct_data['Checking'] * 0.4))
+    draw_detail(d_row1[1], "Total Spent", total_spent)
+    draw_detail(d_row1[2], "Weekly Budget", 1000)
+    draw_detail(d_row1[3], "Weekly Spent", 0)
+
+    d_row2 = st.columns(4)
+    draw_detail(d_row2[0], "Monthly Budget", 4000)
+    draw_detail(d_row2[1], "Monthly Spent", 0)
+    draw_detail(d_row2[2], "Next Bill", 150)
+    draw_detail(d_row
