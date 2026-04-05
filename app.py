@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 import os
+from datetime import datetime
 
 # --- 1. SETTINGS & EXECUTIVE DARK THEME ---
 st.set_page_config(page_title="Aura Finance", page_icon="🏛️", layout="wide")
@@ -12,15 +12,13 @@ st.markdown("""
     .stApp { background-color: #02060E; color: #FFFFFF; }
     [data-testid="stSidebar"] { background-color: #010409 !important; border-right: 1px solid #D4AF37; }
     
-    /* Hero Section Styling */
     .hero-card {
         background: #0D1526; padding: 25px 10px; border-radius: 15px;
-        border: 1px solid #1C2C4E; text-align: center;
+        border: 1px solid #1C2C4E; text-align: center; min-height: 120px;
     }
     .hero-label { font-size: 11px; color: #8E8E93; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 10px; font-weight: 600;}
     .hero-val { font-size: 26px; font-weight: 800; color: #FFFFFF; }
     
-    /* Budget Card Styling */
     .budget-card {
         background: #0D1526; padding: 18px; border-radius: 12px;
         border: 1px solid #1C2C4E; margin-bottom: 10px;
@@ -30,33 +28,30 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATA ENGINE ---
+# --- 2. DATA ENGINE (Persistent Account Balances) ---
+# We use a dedicated CSV to remember your account numbers even after refresh
+def load_accounts():
+    if os.path.exists("aura_accounts.csv"):
+        return pd.read_csv("aura_accounts.csv").iloc[0].to_dict()
+    return {"Checking": 8450.0, "Savings": 25000.0, "Retirement": 142000.0}
+
+def save_accounts(data):
+    pd.DataFrame([data]).to_csv("aura_accounts.csv", index=False)
+
+if 'accounts' not in st.session_state:
+    st.session_state.accounts = load_accounts()
+
+# Load other DBs
 DB_FILES = ["expenses", "budgets", "debt"]
-def load_vault(key):
-    file = f"aura_{key}.csv"
-    if os.path.exists(file):
-        df = pd.read_csv(file)
-        if 'Date' in df.columns: df['Date'] = pd.to_datetime(df['Date'])
-        return df
-    return pd.DataFrame()
-
 for key in DB_FILES:
+    file = f"aura_{key}.csv"
     if key not in st.session_state:
-        st.session_state[key] = load_vault(key)
+        st.session_state[key] = pd.read_csv(file) if os.path.exists(file) else pd.DataFrame()
 
-# --- 3. SIDEBAR (GLOBAL CONTROLS) ---
+# --- 3. NAVIGATION ---
 with st.sidebar:
     st.title("🏛️ AURA")
     page = st.radio("MENU", ["Dashboard", "Monthly Budget", "Weekly Budget", "Debt"])
-    st.markdown("---")
-    st.subheader("🏦 Asset Management")
-    # You can update these live to see your Net Worth change
-    val_checking = st.number_input("Checking", value=8450, step=100)
-    val_savings = st.number_input("Savings", value=25000, step=500)
-    val_retire = st.number_input("Retirement", value=142000, step=1000)
-    
-    total_debt = st.session_state.debt['Balance'].sum() if not st.session_state.debt.empty else 0
-    net_worth = (val_checking + val_savings + val_retire) - total_debt
 
 # --- 4. DASHBOARD RENDERER ---
 def draw_hero(col, label, value, color="#FFFFFF"):
@@ -70,46 +65,22 @@ def draw_hero(col, label, value, color="#FFFFFF"):
 
 if page == "Dashboard":
     st.title("Executive Dashboard")
-    
-    # TOP HERO SECTION (THE 5 PILLARS)
+
+    # Calculate Totals
+    total_debt = st.session_state.debt['Balance'].sum() if not st.session_state.debt.empty else 0
+    net_worth = (st.session_state.accounts['Checking'] + 
+                 st.session_state.accounts['Savings'] + 
+                 st.session_state.accounts['Retirement']) - total_debt
+
+    # --- TOP HERO SECTION ---
     h1, h2, h3, h4, h5 = st.columns(5)
-    draw_hero(h1, "Net Worth", net_worth, color="#D4AF37") # Gold highlight
-    draw_hero(h2, "Checking Account", val_checking)
-    draw_hero(h3, "Savings", val_savings)
-    draw_hero(h4, "Retirement Fund", val_retire)
-    draw_hero(h5, "Total Debt", total_debt, color="#FF5252") # Red highlight
+    draw_hero(h1, "Net Worth", net_worth, color="#D4AF37")
+    draw_hero(h2, "Checking Account", st.session_state.accounts['Checking'])
+    draw_hero(h3, "Savings", st.session_state.accounts['Savings'])
+    draw_hero(h4, "Retirement Fund", st.session_state.accounts['Retirement'])
+    draw_hero(h5, "Total Debt", total_debt, color="#FF5252")
 
     st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("### 🏛️ Pinned Budget Essentials")
-    
-    # Specific Categories Pinned to Front Page
-    pinned = [
-        {"name": "Rent/Mortgage", "lim": 2400}, 
-        {"name": "Groceries", "lim": 600}, 
-        {"name": "Savings Goal", "lim": 1000}
-    ]
-    
-    p_cols = st.columns(3)
-    for idx, item in enumerate(pinned):
-        exp_df = st.session_state.expenses
-        spent = exp_df[exp_df['Category'] == item['name']]['Amount'].sum() if not exp_df.empty else 0
-        with p_cols[idx]:
-            card_html = f"""
-            <div class="budget-card">
-                <div class="stat-label">{item["name"]}</div>
-                <div class="stat-val">${spent:,.0f} <small style="color:#8E8E93;">/ ${item["lim"]:,.0f}</small></div>
-            </div>
-            """
-            st.markdown(card_html, unsafe_allow_html=True)
-            # Subtle progress bar
-            progress = min(spent/item['lim'], 1.0) if item['lim'] > 0 else 0
-            st.progress(progress)
 
-# --- 5. OTHER PAGES (LOGIC) ---
-elif page == "Debt":
-    st.title("Debt Portfolio")
-    # (Existing debt management logic here)
-
-elif page in ["Weekly Budget", "Monthly Budget"]:
-    st.title(f"{page} Management")
-    # (Existing budget management logic here)
+    # --- ADJUSTMENT VAULT ---
+    with st
