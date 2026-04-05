@@ -97,4 +97,32 @@ with tabs[0]: # LOG TAB
     if t_type == "Expense" and t_cat in BUDGETS:
         curr_mo = datetime.now().strftime('%Y-%m')
         df_temp = st.session_state.df
-        if not df_temp.empty
+        if not df_temp.empty: # FIXED: Added the colon here
+            mask = (df_temp['Category'] == t_cat) & (df_temp['Date'].dt.strftime('%Y-%m') == curr_mo)
+            spent = df_temp[mask]['Amount'].sum()
+            rem = BUDGETS[t_cat] - spent
+            if rem > 0:
+                st.caption(f"🛡️ Budget Remaining for {t_cat}: **${rem:,.2f}**")
+            else:
+                st.error(f"⚠️ Warning: Over budget by **${abs(rem):,.2f}**")
+
+    receipt_file = st.file_uploader("Capture Receipt", type=['jpg', 'png', 'jpeg'])
+    
+    if st.button("🚀 Commit Transaction", use_container_width=True):
+        img_path = "None"
+        if receipt_file:
+            img_path = f"{IMG_DIR}/{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+            img = Image.open(receipt_file)
+            img.save(img_path)
+            
+        new_row = pd.DataFrame([[pd.to_datetime(datetime.now().date()), t_type, t_cat, t_amt, t_acc, img_path]], 
+                               columns=["Date", "Type", "Category", "Amount", "Account", "Receipt"])
+        st.session_state.df = pd.concat([st.session_state.df, new_row], ignore_index=True)
+        st.session_state.df.to_csv(DB_FILE, index=False)
+        st.rerun()
+
+with tabs[1]: # STATS TAB
+    st.subheader("Budget vs. Reality")
+    curr_mo = datetime.now().strftime('%Y-%m')
+    if not st.session_state.df.empty:
+        actuals = st.session_state.df[st.session_state.
