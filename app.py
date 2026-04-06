@@ -1088,6 +1088,7 @@ def live_sync_watch() -> None:
 
 
 def dashboard_page(state: dict) -> None:
+    render_header("Aura Finance", "A calm command center for your money, budgets, debt, and leftover cash flow.")
     accounts = state["accounts"]
     sync_live_widget_values(state)
     edit_left, edit_right = st.columns([14, 1])
