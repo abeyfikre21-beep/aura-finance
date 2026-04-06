@@ -147,10 +147,11 @@ def write_local_backup(state: dict) -> None:
 def shared_storage_enabled() -> bool:
     return bool(
         create_client
-        and st.secrets.get("SUPABASE_URL")
+        and secrets_available()
+        and secret_value("SUPABASE_URL")
         and (
-            st.secrets.get("SUPABASE_SERVICE_KEY")
-            or st.secrets.get("SUPABASE_KEY")
+            secret_value("SUPABASE_SERVICE_KEY")
+            or secret_value("SUPABASE_KEY")
         )
     )
 
@@ -159,22 +160,19 @@ def shared_storage_enabled() -> bool:
 def get_supabase_client() -> Client | None:
     if not shared_storage_enabled():
         return None
-    url = str(st.secrets.get("SUPABASE_URL", "")).strip()
-    key = str(
-        st.secrets.get("SUPABASE_SERVICE_KEY", "")
-        or st.secrets.get("SUPABASE_KEY", "")
-    ).strip()
+    url = secret_value("SUPABASE_URL")
+    key = secret_value("SUPABASE_SERVICE_KEY") or secret_value("SUPABASE_KEY")
     if not url or not key or not create_client:
         return None
     return create_client(url, key)
 
 
 def supabase_state_table() -> str:
-    return str(st.secrets.get("SUPABASE_STATE_TABLE", "aura_app_state")).strip() or "aura_app_state"
+    return secret_value("SUPABASE_STATE_TABLE", "aura_app_state") or "aura_app_state"
 
 
 def supabase_state_id() -> str:
-    return str(st.secrets.get("SUPABASE_STATE_ID", "primary")).strip() or "primary"
+    return secret_value("SUPABASE_STATE_ID", "primary") or "primary"
 
 
 def load_state_from_supabase() -> dict | None:
@@ -231,19 +229,28 @@ def normalize_username(value: str) -> str:
     return str(value or "").strip().lower()
 
 
+def secret_value(key: str, default: str = "") -> str:
+    try:
+        return str(st.secrets.get(key, default) or default).strip()
+    except Exception:
+        return default
+
+
+def secrets_available() -> bool:
+    try:
+        _ = st.secrets
+        return True
+    except Exception:
+        return False
+
+
 def shared_auth_from_secrets() -> dict | None:
     username = normalize_username(
-        st.secrets.get("AURA_USERNAME", "")
-        or st.secrets.get("aura_username", "")
+        secret_value("AURA_USERNAME")
+        or secret_value("aura_username")
     )
-    password_hash = str(
-        st.secrets.get("AURA_PASSWORD_HASH", "")
-        or st.secrets.get("aura_password_hash", "")
-    ).strip()
-    plain_password = str(
-        st.secrets.get("AURA_PASSWORD", "")
-        or st.secrets.get("aura_password", "")
-    ).strip()
+    password_hash = secret_value("AURA_PASSWORD_HASH") or secret_value("aura_password_hash")
+    plain_password = secret_value("AURA_PASSWORD") or secret_value("aura_password")
 
     if not password_hash and plain_password:
         password_hash = hash_password(plain_password)
