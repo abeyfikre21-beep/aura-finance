@@ -1006,22 +1006,27 @@ def auth_page(state: dict) -> bool:
         submitted = st.form_submit_button("Login")
         if submitted:
             normalized_input = normalize_username(username)
-            password_hash = hash_password(password)
+            candidate_passwords = []
+            for candidate in [password, password.strip()]:
+                if candidate not in candidate_passwords:
+                    candidate_passwords.append(candidate)
+            candidate_hashes = {hash_password(candidate) for candidate in candidate_passwords}
             shared_match = bool(
                 shared_auth
                 and normalized_input == shared_auth.get("username")
-                and password_hash == shared_auth.get("password_hash")
+                and shared_auth.get("password_hash") in candidate_hashes
             )
             local_match = bool(
                 local_auth.get("username")
                 and normalized_input == local_auth.get("username")
-                and password_hash == local_auth.get("password_hash")
+                and local_auth.get("password_hash") in candidate_hashes
             )
             if shared_match or local_match:
                 st.session_state.logged_in = True
                 st.rerun()
             else:
                 st.error("Incorrect username or password.")
+                st.caption(f"Debug entered hash prefix: {hash_password(password.strip())[:8]}")
     return False
 
 
