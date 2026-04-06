@@ -316,6 +316,16 @@ def weekly_budget_table(state: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def parse_money_input(raw_value: str, fallback: float) -> float:
+    cleaned = str(raw_value).replace("$", "").replace(",", "").strip()
+    if cleaned == "":
+        return 0.0
+    try:
+        return float(cleaned)
+    except ValueError:
+        return fallback
+
+
 def hero_card(label: str, value: str, tone: str = "default") -> None:
     st.markdown(
         f"""
@@ -549,6 +559,19 @@ def apply_theme(mode: str) -> None:
         .line-helper {{ color: {palette["line_helper"]}; font-size: 0.9rem; }}
         .warning-pill {{ display: inline-block; padding: 0.4rem 0.7rem; border-radius: 999px; background: {palette["warning_bg"]}; color: {palette["warning_text"]}; font-size: 0.85rem; margin: 0.25rem 0.35rem 0 0; }}
         .good-pill {{ display: inline-block; padding: 0.4rem 0.7rem; border-radius: 999px; background: {palette["good_pill_bg"]}; color: {palette["good_pill_text"]}; font-size: 0.85rem; margin: 0.25rem 0.35rem 0 0; }}
+        .quick-edit-anchor {{
+            display: flex;
+            justify-content: flex-end;
+            margin: -0.35rem 0 0.8rem;
+        }}
+        .quick-edit-anchor [data-testid="stPopover"] > button {{
+            width: 2.35rem !important;
+            height: 2.35rem !important;
+            border-radius: 999px !important;
+            padding: 0 !important;
+            font-size: 1rem !important;
+            font-weight: 700 !important;
+        }}
         [data-testid="stExpander"] {{
             background: {palette["surface"]};
             border: 1px solid {palette["surface_border"]};
@@ -608,7 +631,8 @@ def apply_theme(mode: str) -> None:
         }}
         button[kind],
         .stButton > button,
-        .stDownloadButton > button {{
+        .stDownloadButton > button,
+        [data-testid="stPopover"] button {{
             background: {palette["surface"]} !important;
             color: {palette["ink"]} !important;
             border: 1px solid {palette["surface_border"]} !important;
@@ -617,6 +641,9 @@ def apply_theme(mode: str) -> None:
         label, .stMarkdown, .stCaption, .stText, .st-emotion-cache-10trblm, .stSubheader, .stHeader {{ color: {palette["ink"]}; }}
         [data-testid="stDataFrame"] * {{ color: {palette["ink"]} !important; }}
         [data-testid="stTable"] * {{ color: {palette["ink"]} !important; }}
+        .quick-edit-panel {{
+            min-width: 250px;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -631,6 +658,32 @@ def render_header(title: str, subtitle: str) -> None:
 def dashboard_page(state: dict) -> None:
     render_header("Aura Finance", "A calm command center for your money, budgets, debt, and leftover cash flow.")
     accounts = state["accounts"]
+    edit_left, edit_right = st.columns([12, 1])
+    with edit_right:
+        st.markdown('<div class="quick-edit-anchor">', unsafe_allow_html=True)
+        with st.popover("✎"):
+            st.markdown('<div class="quick-edit-panel">', unsafe_allow_html=True)
+            st.caption("Quick Edit")
+            checking_text = st.text_input(
+                "Checking",
+                value=str(int(accounts["checking"])) if float(accounts["checking"]).is_integer() else str(accounts["checking"]),
+                key="quick_edit_checking_text",
+            )
+            savings_text = st.text_input(
+                "Savings",
+                value=str(int(accounts["savings"])) if float(accounts["savings"]).is_integer() else str(accounts["savings"]),
+                key="quick_edit_savings_text",
+            )
+            retirement_text = st.text_input(
+                "Retirement Fund",
+                value=str(int(accounts["retirement"])) if float(accounts["retirement"]).is_integer() else str(accounts["retirement"]),
+                key="quick_edit_retirement_text",
+            )
+            accounts["checking"] = parse_money_input(checking_text, float(accounts["checking"]))
+            accounts["savings"] = parse_money_input(savings_text, float(accounts["savings"]))
+            accounts["retirement"] = parse_money_input(retirement_text, float(accounts["retirement"]))
+            st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
     monthly = monthly_metrics(state)
     weekly = weekly_metrics(state)
     net_worth = accounts["checking"] + accounts["savings"] + accounts["retirement"] - total_debt(state)
@@ -638,43 +691,49 @@ def dashboard_page(state: dict) -> None:
     left_amount = leftover_balance(state)
 
     st.markdown('<div class="section-label">Wealth Snapshot</div>', unsafe_allow_html=True)
-    top = st.columns(5)
-    with top[0]:
+    top_row_one = st.columns(3)
+    with top_row_one[0]:
         hero_card("Net Worth", money(net_worth), "good" if net_worth >= 0 else "danger")
-    with top[1]:
+    with top_row_one[1]:
         hero_card("Checking", money(accounts["checking"]))
-    with top[2]:
+    with top_row_one[2]:
         hero_card("Savings", money(accounts["savings"]))
-    with top[3]:
+
+    top_row_two = st.columns(2)
+    with top_row_two[0]:
         hero_card("Retirement", money(accounts["retirement"]))
-    with top[4]:
+    with top_row_two[1]:
         hero_card("Total Debt", money(total_debt(state)), "warn" if total_debt(state) > 0 else "default")
 
     main_col, slide_col = st.columns([3, 1.3], gap="large")
 
     with main_col:
         st.markdown('<div class="section-label">At A Glance</div>', unsafe_allow_html=True)
-        row = st.columns(4)
+        row = st.columns(2)
         with row[0]:
             tone = "good" if monthly["left_after_budget_and_savings"] >= 0 else "danger"
             hero_card("Left To Spend", money(monthly["left_after_budget_and_savings"]), tone)
         with row[1]:
             soft_card("Leftover Money", money(left_amount), "Unused money rolls here automatically")
-        with row[2]:
+
+        row_mid = st.columns(2)
+        with row_mid[0]:
             soft_card("Total Money Spent", money(monthly["spent"] + weekly["spent"]), "Monthly plus weekly spending")
-        with row[3]:
+        with row_mid[1]:
             next_text = f"{next_due['name']} on day {next_due['due_day']}" if next_due else "Nothing due soon"
             soft_card("Next Bill", money(next_due["amount"]) if next_due else money(0), next_text)
 
-        row2 = st.columns(4)
+        row2 = st.columns(2)
         with row2[0]:
             soft_card("Weekly Budget", money(weekly["budgeted"]), week_label(week_key()))
         with row2[1]:
             helper = "Over limit" if weekly["spent"] > weekly["budgeted"] else "This week"
             soft_card("Weekly Spent", money(weekly["spent"]), helper)
-        with row2[2]:
+
+        row3 = st.columns(2)
+        with row3[0]:
             soft_card("Monthly Budget", money(monthly["budgeted"]), datetime.now().strftime("%B %Y"))
-        with row2[3]:
+        with row3[1]:
             helper = "Over limit" if monthly["spent"] > monthly["budgeted"] else "This month"
             soft_card("Monthly Spent", money(monthly["spent"]), helper)
 
@@ -820,7 +879,7 @@ def monthly_page(state: dict) -> None:
 
 
 def weekly_page(state: dict) -> None:
-    render_header("Weekly Budget", "Weekly categories reset every Sunday midnight and unused money rolls to leftover.")
+    render_header("Weekly Budget", "Only your weekly budget and weekly insights live here.")
     st.caption(f"Current week: {week_label(week_key())}")
     metrics = weekly_metrics(state)
     summary = st.columns(3)
@@ -867,15 +926,31 @@ def weekly_page(state: dict) -> None:
 
         table = weekly_budget_table(state)
         if not table.empty:
-            st.markdown("#### Weekly Summary")
-            st.dataframe(table, use_container_width=True, hide_index=True)
-
-        recent_leftover = pd.DataFrame(
-            [item for item in state.get("leftover_ledger", []) if item.get("kind") == "weekly_leftover"][:8]
-        )
-        if not recent_leftover.empty:
-            st.markdown("#### Recent Weekly Leftover Transfers")
-            st.dataframe(recent_leftover, use_container_width=True, hide_index=True)
+            insight_left, insight_right = st.columns(2)
+            with insight_left:
+                st.markdown("#### Weekly Insights")
+                over_rows = table[table["Left"] < 0]
+                if not over_rows.empty:
+                    for _, over in over_rows.iterrows():
+                        st.markdown(
+                            f'<span class="warning-pill">{over["Category"]} is over by {money(abs(float(over["Left"])))}</span>',
+                            unsafe_allow_html=True,
+                        )
+                else:
+                    st.markdown('<span class="good-pill">All weekly categories are on track.</span>', unsafe_allow_html=True)
+                if metrics["left"] >= 0:
+                    st.markdown(
+                        f'<div class="mini-line"><div class="line-title">{money(metrics["left"])} is still available this week.</div></div>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        f'<div class="mini-line"><div class="line-title">Weekly spending is over plan by {money(abs(metrics["left"]))}.</div></div>',
+                        unsafe_allow_html=True,
+                    )
+            with insight_right:
+                st.markdown("#### Weekly Budget")
+                st.dataframe(table, use_container_width=True, hide_index=True)
 
 
 def debt_page(state: dict) -> None:
@@ -969,6 +1044,7 @@ def insights_page(state: dict) -> None:
 
 
 def main() -> None:
+    pages = ["Dashboard", "Monthly Budget", "Weekly Budget", "Debt", "Insights & History"]
     state = load_state()
     state["monthly_budgets"] = normalize_rows(state.get("monthly_budgets", []), weekly=False)
     state["weekly_budgets"] = normalize_rows(state.get("weekly_budgets", []), weekly=True)
@@ -977,6 +1053,8 @@ def main() -> None:
 
     if "theme_mode" not in st.session_state:
         st.session_state.theme_mode = "Light"
+    if "page" not in st.session_state:
+        st.session_state.page = "Dashboard"
     apply_theme(st.session_state.theme_mode)
 
     with st.sidebar:
@@ -985,12 +1063,17 @@ def main() -> None:
         if theme_mode != st.session_state.theme_mode:
             st.session_state.theme_mode = theme_mode
             st.rerun()
-        page = st.radio(
+        st.radio(
             "Navigation",
-            ["Dashboard", "Monthly Budget", "Weekly Budget", "Debt", "Insights & History"],
+            pages,
+            index=pages.index(st.session_state.page),
+            key="page",
             label_visibility="collapsed",
         )
         st.caption("Luxury personal finance, organized around what matters most.")
+
+    page = st.session_state.page
+    st.caption(f"Current page debug: {page}")
 
     if page == "Dashboard":
         dashboard_page(state)
