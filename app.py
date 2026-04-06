@@ -999,6 +999,7 @@ def auth_page(state: dict) -> bool:
     if shared_auth:
         st.caption("Shared login is active. Use the same username and password on desktop and phone.")
         st.caption(f"Debug auth source: {shared_auth.get('source')} | username: {shared_auth.get('username')}")
+        st.caption(f"Debug password hash prefix: {str(shared_auth.get('password_hash', ''))[:8]}")
     with st.form("login_form"):
         username = st.text_input("Username", key="login_username")
         password = st.text_input("Password", type="password", key="login_password")
