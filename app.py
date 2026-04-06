@@ -1501,7 +1501,6 @@ def main() -> None:
     live_sync_watch()
 
     with st.sidebar:
-        st.markdown(f'<div class="brand-row">{AURA_MARK}<div style="font-size:1.3rem;font-weight:700;">Aura</div></div>', unsafe_allow_html=True)
         profile = state.setdefault("profile", {"name": "Your Name", "title": "Personal Finance Owner", "photo": ""})
         with st.expander("Edit Profile"):
             profile["name"] = st.text_input("Name", value=profile.get("name", "Your Name"), key="profile_name")
@@ -1544,7 +1543,6 @@ def main() -> None:
         st.caption("Luxury personal finance, organized around what matters most.")
 
     page = st.session_state.page
-    st.caption(f"Current page debug: {page}")
 
     if page == "Dashboard":
         dashboard_page(state)
