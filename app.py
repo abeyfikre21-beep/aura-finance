@@ -1037,8 +1037,6 @@ def auth_page(state: dict) -> bool:
         return True
 
     st.markdown("### Sign In")
-    if shared_auth:
-        st.caption("Shared login is active. Use the same username and password on desktop and phone.")
     with st.form("login_form"):
         username = st.text_input("Username", key="login_username")
         password = st.text_input("Password", type="password", key="login_password")
