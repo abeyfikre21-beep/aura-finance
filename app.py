@@ -8,6 +8,12 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+try:
+    from supabase import Client, create_client
+except ImportError:
+    Client = None
+    create_client = None
+
 
 APP_TITLE = "Aura Finance"
 DATA_DIR = Path(__file__).parent / "data"
@@ -59,7 +65,14 @@ DEFAULT_STATE = {
     "weekly_history": [],
     "last_month_rollover": "",
     "last_week_rollover": "",
+    "_meta": {
+        "updated_at": "",
+    },
 }
+
+
+def default_state_copy() -> dict:
+    return json.loads(json.dumps(DEFAULT_STATE))
 
 
 def today_local() -> date:
@@ -92,19 +105,143 @@ def money(value: float) -> str:
 
 def load_state() -> dict:
     DATA_DIR.mkdir(exist_ok=True)
+    if shared_storage_enabled():
+        loaded = load_state_from_supabase()
+        if loaded is not None:
+            write_local_backup(loaded)
+            return loaded
+
     if not STATE_FILE.exists():
-        save_state(DEFAULT_STATE)
-        return json.loads(json.dumps(DEFAULT_STATE))
-    return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        default_state = default_state_copy()
+        save_state(default_state)
+        return default_state
+
+    loaded = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    if "_meta" not in loaded:
+        loaded["_meta"] = {"updated_at": ""}
+    return loaded
 
 
 def save_state(state: dict) -> None:
     DATA_DIR.mkdir(exist_ok=True)
+    state.setdefault("_meta", {})
+    state["_meta"]["updated_at"] = datetime.now().isoformat()
+    write_local_backup(state)
+    if shared_storage_enabled():
+        save_state_to_supabase(state)
+
+
+def write_local_backup(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def shared_storage_enabled() -> bool:
+    return bool(
+        create_client
+        and st.secrets.get("SUPABASE_URL")
+        and (
+            st.secrets.get("SUPABASE_SERVICE_KEY")
+            or st.secrets.get("SUPABASE_KEY")
+        )
+    )
+
+
+@st.cache_resource(show_spinner=False)
+def get_supabase_client() -> Client | None:
+    if not shared_storage_enabled():
+        return None
+    url = str(st.secrets.get("SUPABASE_URL", "")).strip()
+    key = str(
+        st.secrets.get("SUPABASE_SERVICE_KEY", "")
+        or st.secrets.get("SUPABASE_KEY", "")
+    ).strip()
+    if not url or not key or not create_client:
+        return None
+    return create_client(url, key)
+
+
+def supabase_state_table() -> str:
+    return str(st.secrets.get("SUPABASE_STATE_TABLE", "aura_app_state")).strip() or "aura_app_state"
+
+
+def supabase_state_id() -> str:
+    return str(st.secrets.get("SUPABASE_STATE_ID", "primary")).strip() or "primary"
+
+
+def load_state_from_supabase() -> dict | None:
+    client = get_supabase_client()
+    if client is None:
+        return None
+    try:
+        response = (
+            client.table(supabase_state_table())
+            .select("payload")
+            .eq("state_id", supabase_state_id())
+            .limit(1)
+            .execute()
+        )
+        rows = response.data or []
+        if not rows:
+            default_state = default_state_copy()
+            save_state_to_supabase(default_state)
+            return default_state
+        loaded = rows[0].get("payload") or default_state_copy()
+        if "_meta" not in loaded:
+            loaded["_meta"] = {"updated_at": ""}
+        return loaded
+    except Exception:
+        return None
+
+
+def save_state_to_supabase(state: dict) -> None:
+    client = get_supabase_client()
+    if client is None:
+        return
+    try:
+        (
+            client.table(supabase_state_table())
+            .upsert(
+                {
+                    "state_id": supabase_state_id(),
+                    "payload": state,
+                    "updated_at": state["_meta"]["updated_at"],
+                },
+                on_conflict="state_id",
+            )
+            .execute()
+        )
+    except Exception:
+        pass
 
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def shared_auth_from_secrets() -> dict | None:
+    username = str(
+        st.secrets.get("AURA_USERNAME", "")
+        or st.secrets.get("aura_username", "")
+    ).strip()
+    password_hash = str(
+        st.secrets.get("AURA_PASSWORD_HASH", "")
+        or st.secrets.get("aura_password_hash", "")
+    ).strip()
+    plain_password = str(
+        st.secrets.get("AURA_PASSWORD", "")
+        or st.secrets.get("aura_password", "")
+    ).strip()
+
+    if not password_hash and plain_password:
+        password_hash = hash_password(plain_password)
+
+    if username and password_hash:
+        return {
+            "username": username,
+            "password_hash": password_hash,
+            "source": "shared_secrets",
+        }
+    return None
 
 
 def normalize_rows(rows: list[dict], weekly: bool = False) -> list[dict]:
@@ -802,13 +939,15 @@ def render_header(title: str, subtitle: str) -> None:
 
 def auth_page(state: dict) -> bool:
     auth = state.setdefault("auth", {"username": "", "password_hash": "", "configured": False})
+    shared_auth = shared_auth_from_secrets()
+    active_auth = shared_auth or auth
     st.markdown(
         f'<div class="brand-row" style="margin-bottom:0.6rem;">{AURA_MARK}<div class="page-title">{APP_TITLE}</div></div>',
         unsafe_allow_html=True,
     )
     st.markdown('<div class="page-subtitle">Private access for your personal finance dashboard.</div>', unsafe_allow_html=True)
 
-    if not auth.get("configured"):
+    if not shared_auth and not auth.get("configured"):
         st.markdown("### Create Login")
         with st.form("setup_login"):
             username = st.text_input("Username")
@@ -833,12 +972,14 @@ def auth_page(state: dict) -> bool:
         return True
 
     st.markdown("### Sign In")
+    if shared_auth:
+        st.caption("Shared login is active. Use the same username and password on desktop and phone.")
     with st.form("login_form"):
         username = st.text_input("Username", key="login_username")
         password = st.text_input("Password", type="password", key="login_password")
         submitted = st.form_submit_button("Login")
         if submitted:
-            if username.strip() == auth.get("username") and hash_password(password) == auth.get("password_hash"):
+            if username.strip() == active_auth.get("username") and hash_password(password) == active_auth.get("password_hash"):
                 st.session_state.logged_in = True
                 st.rerun()
             else:
@@ -850,6 +991,13 @@ def auth_page(state: dict) -> bool:
 def rollover_watch(state: dict) -> None:
     if process_rollovers(state):
         save_state(state)
+        st.rerun()
+    st.empty()
+
+
+@st.fragment(run_every="4s")
+def live_sync_watch() -> None:
+    if st.session_state.get("logged_in"):
         st.rerun()
     st.empty()
 
@@ -1263,6 +1411,7 @@ def main() -> None:
         return
 
     rollover_watch(state)
+    live_sync_watch()
 
     with st.sidebar:
         st.markdown(f'<div class="brand-row">{AURA_MARK}<div style="font-size:1.3rem;font-weight:700;">Aura</div></div>', unsafe_allow_html=True)
