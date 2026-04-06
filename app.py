@@ -226,7 +226,8 @@ def hash_password(password: str) -> str:
 
 
 def normalize_username(value: str) -> str:
-    return str(value or "").strip().lower()
+    cleaned = str(value or "").strip().lower()
+    return "".join(ch for ch in cleaned if ch.isalnum() or ch in "._-@")
 
 
 def secret_value(key: str, default: str = "") -> str:
@@ -989,10 +990,13 @@ def auth_page(state: dict) -> bool:
                     auth["configured"] = True
                     save_state(state)
                     st.session_state.logged_in = True
+                    st.session_state["auth_verified"] = True
                     st.rerun()
         return False
 
-    if st.session_state.get("logged_in"):
+    if st.session_state.get("logged_in") or st.session_state.get("auth_verified"):
+        st.session_state.logged_in = True
+        st.session_state["auth_verified"] = True
         return True
 
     st.markdown("### Sign In")
@@ -1023,6 +1027,8 @@ def auth_page(state: dict) -> bool:
             )
             if shared_match or local_match:
                 st.session_state.logged_in = True
+                st.session_state["auth_verified"] = True
+                st.success("Login successful.")
                 st.rerun()
             else:
                 st.error("Incorrect username or password.")
@@ -1038,11 +1044,8 @@ def rollover_watch(state: dict) -> None:
     st.empty()
 
 
-@st.fragment(run_every="4s")
 def live_sync_watch() -> None:
-    if st.session_state.get("logged_in"):
-        st.rerun()
-    st.empty()
+    return
 
 
 def dashboard_page(state: dict) -> None:
@@ -1446,7 +1449,9 @@ def main() -> None:
     if "page" not in st.session_state:
         st.session_state.page = "Dashboard"
     if "logged_in" not in st.session_state:
-        st.session_state.logged_in = False
+        st.session_state["logged_in"] = False
+    if "auth_verified" not in st.session_state:
+        st.session_state["auth_verified"] = False
     apply_theme(st.session_state.theme_mode)
 
     if not auth_page(state):
@@ -1492,6 +1497,7 @@ def main() -> None:
         )
         if st.button("Logout", use_container_width=True):
             st.session_state.logged_in = False
+            st.session_state["auth_verified"] = False
             for key in ["login_username", "login_password"]:
                 if key in st.session_state:
                     del st.session_state[key]
