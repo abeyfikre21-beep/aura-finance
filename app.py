@@ -218,11 +218,15 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
+def normalize_username(value: str) -> str:
+    return str(value or "").strip().lower()
+
+
 def shared_auth_from_secrets() -> dict | None:
-    username = str(
+    username = normalize_username(
         st.secrets.get("AURA_USERNAME", "")
         or st.secrets.get("aura_username", "")
-    ).strip()
+    )
     password_hash = str(
         st.secrets.get("AURA_PASSWORD_HASH", "")
         or st.secrets.get("aura_password_hash", "")
@@ -940,7 +944,11 @@ def render_header(title: str, subtitle: str) -> None:
 def auth_page(state: dict) -> bool:
     auth = state.setdefault("auth", {"username": "", "password_hash": "", "configured": False})
     shared_auth = shared_auth_from_secrets()
-    active_auth = shared_auth or auth
+    local_auth = {
+        "username": normalize_username(auth.get("username", "")),
+        "password_hash": str(auth.get("password_hash", "")).strip(),
+        "source": "local_state",
+    }
     st.markdown(
         f'<div class="brand-row" style="margin-bottom:0.6rem;">{AURA_MARK}<div class="page-title">{APP_TITLE}</div></div>',
         unsafe_allow_html=True,
@@ -960,7 +968,7 @@ def auth_page(state: dict) -> bool:
                 elif password != confirm:
                     st.error("Passwords do not match.")
                 else:
-                    auth["username"] = username.strip()
+                    auth["username"] = normalize_username(username)
                     auth["password_hash"] = hash_password(password)
                     auth["configured"] = True
                     save_state(state)
@@ -979,7 +987,19 @@ def auth_page(state: dict) -> bool:
         password = st.text_input("Password", type="password", key="login_password")
         submitted = st.form_submit_button("Login")
         if submitted:
-            if username.strip() == active_auth.get("username") and hash_password(password) == active_auth.get("password_hash"):
+            normalized_input = normalize_username(username)
+            password_hash = hash_password(password)
+            shared_match = bool(
+                shared_auth
+                and normalized_input == shared_auth.get("username")
+                and password_hash == shared_auth.get("password_hash")
+            )
+            local_match = bool(
+                local_auth.get("username")
+                and normalized_input == local_auth.get("username")
+                and password_hash == local_auth.get("password_hash")
+            )
+            if shared_match or local_match:
                 st.session_state.logged_in = True
                 st.rerun()
             else:
