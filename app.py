@@ -75,6 +75,13 @@ def default_state_copy() -> dict:
     return json.loads(json.dumps(DEFAULT_STATE))
 
 
+def state_fingerprint(state: dict) -> str:
+    copy_state = json.loads(json.dumps(state))
+    copy_state.setdefault("_meta", {})
+    copy_state["_meta"]["updated_at"] = ""
+    return json.dumps(copy_state, sort_keys=True)
+
+
 def today_local() -> date:
     return datetime.now().date()
 
@@ -105,7 +112,8 @@ def money(value: float) -> str:
 
 def load_state() -> dict:
     DATA_DIR.mkdir(exist_ok=True)
-    if shared_storage_enabled():
+    local_edit_until = float(st.session_state.get("local_edit_priority_until", 0.0) or 0.0)
+    if shared_storage_enabled() and datetime.now().timestamp() >= local_edit_until:
         loaded = load_state_from_supabase()
         if loaded is not None:
             write_local_backup(loaded)
@@ -131,13 +139,24 @@ def load_state() -> dict:
     return loaded
 
 
-def save_state(state: dict) -> None:
+def save_state(state: dict, immediate_remote: bool = False) -> None:
     DATA_DIR.mkdir(exist_ok=True)
     state.setdefault("_meta", {})
     state["_meta"]["updated_at"] = datetime.now().isoformat()
     write_local_backup(state)
+    fingerprint = state_fingerprint(state)
+    st.session_state["last_local_snapshot"] = fingerprint
+    st.session_state["local_edit_priority_until"] = datetime.now().timestamp() + 8
     if shared_storage_enabled():
-        save_state_to_supabase(state)
+        if immediate_remote:
+            save_state_to_supabase(state)
+            st.session_state["last_remote_snapshot"] = fingerprint
+            st.session_state["pending_remote_snapshot"] = ""
+            st.session_state["pending_remote_since"] = 0.0
+        else:
+            if fingerprint != st.session_state.get("last_remote_snapshot", ""):
+                st.session_state["pending_remote_snapshot"] = fingerprint
+                st.session_state["pending_remote_since"] = datetime.now().timestamp()
 
 
 def write_local_backup(state: dict) -> None:
@@ -219,6 +238,24 @@ def save_state_to_supabase(state: dict) -> None:
         )
     except Exception:
         pass
+
+
+def flush_remote_save_if_due(state: dict, debounce_seconds: float = 2.0) -> None:
+    pending_snapshot = st.session_state.get("pending_remote_snapshot", "")
+    pending_since = float(st.session_state.get("pending_remote_since", 0.0) or 0.0)
+    if not pending_snapshot or not pending_since or not shared_storage_enabled():
+        return
+    if datetime.now().timestamp() - pending_since < debounce_seconds:
+        return
+    current_fingerprint = state_fingerprint(state)
+    if current_fingerprint != pending_snapshot:
+        st.session_state["pending_remote_snapshot"] = current_fingerprint
+        st.session_state["pending_remote_since"] = datetime.now().timestamp()
+        return
+    save_state_to_supabase(state)
+    st.session_state["last_remote_snapshot"] = current_fingerprint
+    st.session_state["pending_remote_snapshot"] = ""
+    st.session_state["pending_remote_since"] = 0.0
 
 
 def hash_password(password: str) -> str:
@@ -988,7 +1025,7 @@ def auth_page(state: dict) -> bool:
                     auth["username"] = normalize_username(username)
                     auth["password_hash"] = hash_password(password)
                     auth["configured"] = True
-                    save_state(state)
+                    save_state(state, immediate_remote=True)
                     st.session_state.logged_in = True
                     st.session_state["auth_verified"] = True
                     st.rerun()
@@ -1039,8 +1076,14 @@ def auth_page(state: dict) -> bool:
 @st.fragment(run_every="60s")
 def rollover_watch(state: dict) -> None:
     if process_rollovers(state):
-        save_state(state)
+        save_state(state, immediate_remote=True)
         st.rerun()
+    st.empty()
+
+
+@st.fragment(run_every="3s")
+def debounced_sync_watch(state: dict) -> None:
+    flush_remote_save_if_due(state)
     st.empty()
 
 
@@ -1231,7 +1274,7 @@ def monthly_page(state: dict) -> None:
             submitted = st.form_submit_button("Add Category")
             if submitted and name.strip():
                 state["monthly_budgets"].append({"name": name.strip(), "budget": budget, "spent": 0.0, "bill_day": int(bill_day)})
-                save_state(state)
+                save_state(state, immediate_remote=True)
                 st.rerun()
 
     with list_col:
@@ -1248,7 +1291,7 @@ def monthly_page(state: dict) -> None:
                 state["monthly_budgets"][idx]["bill_day"] = c4.number_input("Bill Day", min_value=1, max_value=31, value=int(row["bill_day"]), step=1, key=f"m_bill_{idx}")
                 if c5.button("Delete", key=f"m_delete_{idx}", use_container_width=True):
                     state["monthly_budgets"].pop(idx)
-                    save_state(state)
+                    save_state(state, immediate_remote=True)
                     st.rerun()
                 left = row["budget"] - row["spent"]
                 if left >= 0:
@@ -1292,7 +1335,7 @@ def weekly_page(state: dict) -> None:
             submitted = st.form_submit_button("Add Weekly Category")
             if submitted and name.strip():
                 state["weekly_budgets"].append({"name": name.strip(), "budget": budget, "spent": 0.0})
-                save_state(state)
+                save_state(state, immediate_remote=True)
                 st.rerun()
 
     with list_col:
@@ -1308,7 +1351,7 @@ def weekly_page(state: dict) -> None:
                 state["weekly_budgets"][idx]["spent"] = c3.number_input("Spent", min_value=0.0, value=float(row["spent"]), step=10.0, key=f"w_spent_{idx}")
                 if c4.button("Delete", key=f"w_delete_{idx}", use_container_width=True):
                     state["weekly_budgets"].pop(idx)
-                    save_state(state)
+                    save_state(state, immediate_remote=True)
                     st.rerun()
                 left = row["budget"] - row["spent"]
                 if left >= 0:
@@ -1370,7 +1413,7 @@ def debt_page(state: dict) -> None:
             submitted = st.form_submit_button("Add Debt")
             if submitted and name.strip():
                 state["debts"].append({"name": name.strip(), "balance": balance, "payment": payment, "due_day": int(due_day)})
-                save_state(state)
+                save_state(state, immediate_remote=True)
                 st.rerun()
 
     with list_col:
@@ -1387,7 +1430,7 @@ def debt_page(state: dict) -> None:
                 state["debts"][idx]["due_day"] = c4.number_input("Due Day", min_value=1, max_value=31, value=int(row["due_day"]), step=1, key=f"d_due_{idx}")
                 if c5.button("Delete", key=f"d_delete_{idx}", use_container_width=True):
                     state["debts"].pop(idx)
-                    save_state(state)
+                    save_state(state, immediate_remote=True)
                     st.rerun()
 
         if debts:
@@ -1455,10 +1498,11 @@ def main() -> None:
     apply_theme(st.session_state.theme_mode)
 
     if not auth_page(state):
-        save_state(state)
+        save_state(state, immediate_remote=True)
         return
 
     rollover_watch(state)
+    debounced_sync_watch(state)
     live_sync_watch()
 
     with st.sidebar:
