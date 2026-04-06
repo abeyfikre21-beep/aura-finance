@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -10,6 +12,16 @@ import streamlit as st
 APP_TITLE = "Aura Finance"
 DATA_DIR = Path(__file__).parent / "data"
 STATE_FILE = DATA_DIR / "aura_state.json"
+AURA_MARK = """
+<svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <path d="M4 20H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  <path d="M6 20V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  <path d="M10 20V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  <path d="M14 20V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  <path d="M18 20V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  <path d="M3.5 9.5L12 4L20.5 9.5H3.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+</svg>
+"""
 
 
 DEFAULT_STATE = {
@@ -19,6 +31,16 @@ DEFAULT_STATE = {
         "savings": 0.0,
         "retirement": 0.0,
         "monthly_savings_goal": 1000.0,
+    },
+    "profile": {
+        "name": "Your Name",
+        "title": "Personal Finance Owner",
+        "photo": "",
+    },
+    "auth": {
+        "username": "",
+        "password_hash": "",
+        "configured": False,
     },
     "monthly_budgets": [
         {"name": "Housing", "budget": 0.0, "spent": 0.0, "bill_day": 1},
@@ -81,6 +103,10 @@ def save_state(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
 def normalize_rows(rows: list[dict], weekly: bool = False) -> list[dict]:
     normalized = []
     for row in rows:
@@ -129,11 +155,17 @@ def leftover_balance(state: dict) -> float:
     return sum(item["amount"] for item in state["leftover_ledger"])
 
 
-def process_rollovers(state: dict) -> None:
+def process_rollovers(state: dict) -> bool:
+    changed = False
     current_month = month_key()
     current_week = week_key()
+    last_month = state.get("last_month_rollover", "")
+    last_week = state.get("last_week_rollover", "")
 
-    if state.get("last_month_rollover") != current_month:
+    if not last_month:
+        state["last_month_rollover"] = current_month
+        changed = True
+    elif last_month != current_month:
         monthly_rows = normalize_rows(state.get("monthly_budgets", []), weekly=False)
         total_budget = sum(row["budget"] for row in monthly_rows)
         total_spent = sum(row["spent"] for row in monthly_rows)
@@ -141,57 +173,60 @@ def process_rollovers(state: dict) -> None:
         income = float(state["accounts"].get("monthly_income", 0.0) or 0.0)
         for row in monthly_rows:
             unused = max(row["budget"] - row["spent"], 0.0)
-            add_leftover_entry(state, f"{row['name']} monthly leftover", unused, "monthly_leftover", current_month)
+            add_leftover_entry(state, f"{row['name']} monthly leftover", unused, "monthly_leftover", last_month)
         free_cash = max(income - total_budget - savings_goal, 0.0)
-        add_leftover_entry(state, "Income left after budget and savings goal", free_cash, "income_leftover", current_month)
-        if state.get("last_month_rollover"):
-            previous = state["last_month_rollover"]
-            status = "Saved" if total_budget >= total_spent else "Overspent"
-            amount = max(total_budget - total_spent, 0.0) if status == "Saved" else max(total_spent - total_budget, 0.0)
-            state["monthly_history"].insert(
-                0,
-                {
-                    "month": previous,
-                    "budgeted": round(total_budget, 2),
-                    "spent": round(total_spent, 2),
-                    "saved": round(max(total_budget - total_spent, 0.0), 2),
-                    "overspent": round(max(total_spent - total_budget, 0.0), 2),
-                    "leftover_sent": round(sum(max(r["budget"] - r["spent"], 0.0) for r in monthly_rows), 2),
-                    "status": status,
-                    "amount": round(amount, 2),
-                },
-            )
+        add_leftover_entry(state, "Income left after budget and savings goal", free_cash, "income_leftover", last_month)
+        status = "Saved" if total_budget >= total_spent else "Overspent"
+        amount = max(total_budget - total_spent, 0.0) if status == "Saved" else max(total_spent - total_budget, 0.0)
+        state["monthly_history"].insert(
+            0,
+            {
+                "month": last_month,
+                "budgeted": round(total_budget, 2),
+                "spent": round(total_spent, 2),
+                "saved": round(max(total_budget - total_spent, 0.0), 2),
+                "overspent": round(max(total_spent - total_budget, 0.0), 2),
+                "leftover_sent": round(sum(max(r["budget"] - r["spent"], 0.0) for r in monthly_rows), 2),
+                "status": status,
+                "amount": round(amount, 2),
+            },
+        )
         for row in state["monthly_budgets"]:
             row["spent"] = 0.0
         state["last_month_rollover"] = current_month
+        changed = True
 
-    if state.get("last_week_rollover") != current_week:
+    if not last_week:
+        state["last_week_rollover"] = current_week
+        changed = True
+    elif last_week != current_week:
         weekly_rows = normalize_rows(state.get("weekly_budgets", []), weekly=True)
         total_budget = sum(row["budget"] for row in weekly_rows)
         total_spent = sum(row["spent"] for row in weekly_rows)
         for row in weekly_rows:
             unused = max(row["budget"] - row["spent"], 0.0)
-            add_leftover_entry(state, f"{row['name']} weekly leftover", unused, "weekly_leftover", current_week)
-        if state.get("last_week_rollover"):
-            previous = state["last_week_rollover"]
-            status = "Saved" if total_budget >= total_spent else "Overspent"
-            amount = max(total_budget - total_spent, 0.0) if status == "Saved" else max(total_spent - total_budget, 0.0)
-            state["weekly_history"].insert(
-                0,
-                {
-                    "week": previous,
-                    "budgeted": round(total_budget, 2),
-                    "spent": round(total_spent, 2),
-                    "saved": round(max(total_budget - total_spent, 0.0), 2),
-                    "overspent": round(max(total_spent - total_budget, 0.0), 2),
-                    "leftover_sent": round(sum(max(r["budget"] - r["spent"], 0.0) for r in weekly_rows), 2),
-                    "status": status,
-                    "amount": round(amount, 2),
-                },
-            )
+            add_leftover_entry(state, f"{row['name']} weekly leftover", unused, "weekly_leftover", last_week)
+        status = "Saved" if total_budget >= total_spent else "Overspent"
+        amount = max(total_budget - total_spent, 0.0) if status == "Saved" else max(total_spent - total_budget, 0.0)
+        state["weekly_history"].insert(
+            0,
+            {
+                "week": last_week,
+                "budgeted": round(total_budget, 2),
+                "spent": round(total_spent, 2),
+                "saved": round(max(total_budget - total_spent, 0.0), 2),
+                "overspent": round(max(total_spent - total_budget, 0.0), 2),
+                "leftover_sent": round(sum(max(r["budget"] - r["spent"], 0.0) for r in weekly_rows), 2),
+                "status": status,
+                "amount": round(amount, 2),
+            },
+        )
         for row in state["weekly_budgets"]:
             row["spent"] = 0.0
         state["last_week_rollover"] = current_week
+        changed = True
+
+    return changed
 
 
 def monthly_metrics(state: dict) -> dict:
@@ -324,6 +359,44 @@ def parse_money_input(raw_value: str, fallback: float) -> float:
         return float(cleaned)
     except ValueError:
         return fallback
+
+
+def uploaded_file_to_data_url(uploaded_file) -> str:
+    if uploaded_file is None:
+        return ""
+    encoded = base64.b64encode(uploaded_file.getvalue()).decode("ascii")
+    mime = uploaded_file.type or "image/png"
+    return f"data:{mime};base64,{encoded}"
+
+
+def sync_live_widget_values(state: dict) -> None:
+    for idx, row in enumerate(state.get("monthly_budgets", [])):
+        if f"m_name_{idx}" in st.session_state:
+            row["name"] = st.session_state[f"m_name_{idx}"]
+        if f"m_budget_{idx}" in st.session_state:
+            row["budget"] = float(st.session_state[f"m_budget_{idx}"])
+        if f"m_spent_{idx}" in st.session_state:
+            row["spent"] = float(st.session_state[f"m_spent_{idx}"])
+        if f"m_bill_{idx}" in st.session_state:
+            row["bill_day"] = int(st.session_state[f"m_bill_{idx}"])
+
+    for idx, row in enumerate(state.get("weekly_budgets", [])):
+        if f"w_name_{idx}" in st.session_state:
+            row["name"] = st.session_state[f"w_name_{idx}"]
+        if f"w_budget_{idx}" in st.session_state:
+            row["budget"] = float(st.session_state[f"w_budget_{idx}"])
+        if f"w_spent_{idx}" in st.session_state:
+            row["spent"] = float(st.session_state[f"w_spent_{idx}"])
+
+    for idx, row in enumerate(state.get("debts", [])):
+        if f"d_name_{idx}" in st.session_state:
+            row["name"] = st.session_state[f"d_name_{idx}"]
+        if f"d_balance_{idx}" in st.session_state:
+            row["balance"] = float(st.session_state[f"d_balance_{idx}"])
+        if f"d_payment_{idx}" in st.session_state:
+            row["payment"] = float(st.session_state[f"d_payment_{idx}"])
+        if f"d_due_{idx}" in st.session_state:
+            row["due_day"] = int(st.session_state[f"d_due_{idx}"])
 
 
 def hero_card(label: str, value: str, tone: str = "default") -> None:
@@ -534,25 +607,40 @@ def apply_theme(mode: str) -> None:
         }}
         .block-container {{ padding-top: 1.4rem; padding-bottom: 2rem; max-width: 1400px; }}
         h1, h2, h3 {{ font-family: 'Cormorant Garamond', serif; letter-spacing: 0.02em; color: {palette["title"]}; }}
-        .page-title {{ font-family: 'Cormorant Garamond', serif; font-size: 3rem; font-weight: 700; margin-bottom: 0.2rem; color: {palette["title"]}; }}
-        .page-subtitle {{ color: {palette["subtitle"]}; margin-bottom: 1.2rem; }}
+        .brand-row {{
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            color: {palette["title"]};
+        }}
+        .brand-row svg {{
+            width: 1.45rem;
+            height: 1.45rem;
+            flex: 0 0 auto;
+        }}
+        .page-title {{ font-family: 'Cormorant Garamond', serif; font-size: 2.7rem; font-weight: 700; margin-bottom: 0.15rem; color: {palette["title"]}; text-align: left; }}
+        .page-subtitle {{ color: {palette["subtitle"]}; margin-bottom: 1rem; text-align: left; }}
         .section-label {{ font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.18em; color: {palette["section"]}; margin: 1rem 0 0.8rem; }}
         .hero-card, .soft-card, .glass-panel {{
             background: {palette["surface"]};
             border: 1px solid {palette["surface_border"]};
-            border-radius: 24px;
+            border-radius: 16px;
             box-shadow: {palette["surface_shadow"]};
-            padding: 1.2rem 1.25rem;
+            padding: 0.68rem 0.82rem;
+            min-height: 108px;
         }}
         .hero-card.default {{ background: {palette["default_bg"]}; }}
         .hero-card.good {{ background: {palette["good_bg"]}; }}
         .hero-card.warn {{ background: {palette["warn_bg"]}; }}
         .hero-card.danger {{ background: {palette["danger_bg"]}; }}
-        .card-eyebrow {{ font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.16em; color: {palette["eyebrow"]}; margin-bottom: 0.45rem; }}
-        .hero-value {{ font-size: 2rem; font-weight: 700; color: {palette["value"]}; }}
-        .soft-value {{ font-size: 1.45rem; font-weight: 700; color: {palette["value"]}; }}
-        .soft-helper {{ font-size: 0.88rem; color: {palette["helper"]}; margin-top: 0.22rem; min-height: 1.2rem; }}
-        .panel-title {{ font-family: 'Cormorant Garamond', serif; font-size: 1.65rem; margin-bottom: 0.7rem; color: {palette["title"]}; }}
+        .card-eyebrow {{ font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.15em; color: {palette["eyebrow"]}; margin-bottom: 0.32rem; }}
+        .hero-value {{ font-size: 1.48rem; font-weight: 700; color: {palette["value"]}; }}
+        .soft-value {{ font-size: 1.08rem; font-weight: 700; color: {palette["value"]}; }}
+        .soft-helper {{ font-size: 0.78rem; color: {palette["helper"]}; margin-top: 0.12rem; min-height: 0.9rem; }}
+        .panel-title {{ font-family: 'Cormorant Garamond', serif; font-size: 1.28rem; margin-bottom: 0.45rem; color: {palette["title"]}; }}
+        .dashboard-group {{
+            margin-bottom: 1rem;
+        }}
         .mini-line {{ padding: 0.5rem 0; border-bottom: 1px solid {palette["divider"]}; }}
         .mini-line:last-child {{ border-bottom: none; }}
         .line-title {{ font-weight: 600; color: {palette["line_title"]}; }}
@@ -629,6 +717,28 @@ def apply_theme(mode: str) -> None:
             background: {palette["input_bg"]} !important;
             color: {palette["input_text"]} !important;
         }}
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button {{
+            -webkit-appearance: none !important;
+            margin: 0 !important;
+        }}
+        input[type=number] {{
+            -moz-appearance: textfield !important;
+            appearance: textfield !important;
+        }}
+        [data-testid="stNumberInput"] button {{
+            display: none !important;
+        }}
+        [data-testid="stNumberInput"] input,
+        [data-testid="stTextInput"] input,
+        [data-testid="stTextArea"] textarea,
+        [data-testid="stSelectbox"] div,
+        [data-baseweb="select"] input,
+        [data-baseweb="menu"] *,
+        [role="listbox"] *,
+        [role="option"] * {{
+            color: {palette["ink"]} !important;
+        }}
         button[kind],
         .stButton > button,
         .stDownloadButton > button,
@@ -644,6 +754,41 @@ def apply_theme(mode: str) -> None:
         .quick-edit-panel {{
             min-width: 250px;
         }}
+        .profile-box {{
+            margin: 0.85rem 0 1rem;
+            padding: 0.85rem 0.9rem;
+            border-radius: 16px;
+            background: {palette["surface"]};
+            border: 1px solid {palette["surface_border"]};
+        }}
+        .profile-avatar {{
+            width: 3rem;
+            height: 3rem;
+            border-radius: 999px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: {palette["default_bg"]};
+            color: {palette["value"]};
+            font-size: 1rem;
+            font-weight: 700;
+            overflow: hidden;
+            margin-bottom: 0.65rem;
+        }}
+        .profile-avatar img {{
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }}
+        .profile-name {{
+            font-weight: 700;
+            color: {palette["ink"]};
+        }}
+        .profile-title {{
+            font-size: 0.8rem;
+            color: {palette["helper"]};
+            margin-top: 0.2rem;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -651,14 +796,71 @@ def apply_theme(mode: str) -> None:
 
 
 def render_header(title: str, subtitle: str) -> None:
-    st.markdown(f'<div class="page-title">{title}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="brand-row">{AURA_MARK}<div class="page-title">{title}</div></div>', unsafe_allow_html=True)
     st.markdown(f'<div class="page-subtitle">{subtitle}</div>', unsafe_allow_html=True)
+
+
+def auth_page(state: dict) -> bool:
+    auth = state.setdefault("auth", {"username": "", "password_hash": "", "configured": False})
+    st.markdown(
+        f'<div class="brand-row" style="margin-bottom:0.6rem;">{AURA_MARK}<div class="page-title">{APP_TITLE}</div></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown('<div class="page-subtitle">Private access for your personal finance dashboard.</div>', unsafe_allow_html=True)
+
+    if not auth.get("configured"):
+        st.markdown("### Create Login")
+        with st.form("setup_login"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            confirm = st.text_input("Confirm Password", type="password")
+            submitted = st.form_submit_button("Create Login")
+            if submitted:
+                if not username.strip() or not password:
+                    st.error("Enter a username and password.")
+                elif password != confirm:
+                    st.error("Passwords do not match.")
+                else:
+                    auth["username"] = username.strip()
+                    auth["password_hash"] = hash_password(password)
+                    auth["configured"] = True
+                    save_state(state)
+                    st.session_state.logged_in = True
+                    st.rerun()
+        return False
+
+    if st.session_state.get("logged_in"):
+        return True
+
+    st.markdown("### Sign In")
+    with st.form("login_form"):
+        username = st.text_input("Username", key="login_username")
+        password = st.text_input("Password", type="password", key="login_password")
+        submitted = st.form_submit_button("Login")
+        if submitted:
+            if username.strip() == auth.get("username") and hash_password(password) == auth.get("password_hash"):
+                st.session_state.logged_in = True
+                st.rerun()
+            else:
+                st.error("Incorrect username or password.")
+    return False
+
+
+@st.fragment(run_every="60s")
+def rollover_watch(state: dict) -> None:
+    if process_rollovers(state):
+        save_state(state)
+        st.rerun()
+    st.empty()
 
 
 def dashboard_page(state: dict) -> None:
     render_header("Aura Finance", "A calm command center for your money, budgets, debt, and leftover cash flow.")
     accounts = state["accounts"]
-    edit_left, edit_right = st.columns([12, 1])
+    sync_live_widget_values(state)
+    edit_left, edit_right = st.columns([14, 1])
+    with edit_left:
+        st.empty()
     with edit_right:
         st.markdown('<div class="quick-edit-anchor">', unsafe_allow_html=True)
         with st.popover("✎"):
@@ -691,49 +893,43 @@ def dashboard_page(state: dict) -> None:
     left_amount = leftover_balance(state)
 
     st.markdown('<div class="section-label">Wealth Snapshot</div>', unsafe_allow_html=True)
-    top_row_one = st.columns(3)
-    with top_row_one[0]:
+    top_group = st.columns(5)
+    with top_group[0]:
         hero_card("Net Worth", money(net_worth), "good" if net_worth >= 0 else "danger")
-    with top_row_one[1]:
+    with top_group[1]:
         hero_card("Checking", money(accounts["checking"]))
-    with top_row_one[2]:
+    with top_group[2]:
         hero_card("Savings", money(accounts["savings"]))
-
-    top_row_two = st.columns(2)
-    with top_row_two[0]:
+    with top_group[3]:
         hero_card("Retirement", money(accounts["retirement"]))
-    with top_row_two[1]:
+    with top_group[4]:
         hero_card("Total Debt", money(total_debt(state)), "warn" if total_debt(state) > 0 else "default")
 
-    main_col, slide_col = st.columns([3, 1.3], gap="large")
+    main_col, slide_col = st.columns([4.2, 1.15], gap="large")
 
     with main_col:
         st.markdown('<div class="section-label">At A Glance</div>', unsafe_allow_html=True)
-        row = st.columns(2)
+        row = st.columns(4)
         with row[0]:
             tone = "good" if monthly["left_after_budget_and_savings"] >= 0 else "danger"
             hero_card("Left To Spend", money(monthly["left_after_budget_and_savings"]), tone)
         with row[1]:
             soft_card("Leftover Money", money(left_amount), "Unused money rolls here automatically")
-
-        row_mid = st.columns(2)
-        with row_mid[0]:
+        with row[2]:
             soft_card("Total Money Spent", money(monthly["spent"] + weekly["spent"]), "Monthly plus weekly spending")
-        with row_mid[1]:
+        with row[3]:
             next_text = f"{next_due['name']} on day {next_due['due_day']}" if next_due else "Nothing due soon"
             soft_card("Next Bill", money(next_due["amount"]) if next_due else money(0), next_text)
 
-        row2 = st.columns(2)
+        row2 = st.columns(4)
         with row2[0]:
             soft_card("Weekly Budget", money(weekly["budgeted"]), week_label(week_key()))
         with row2[1]:
             helper = "Over limit" if weekly["spent"] > weekly["budgeted"] else "This week"
             soft_card("Weekly Spent", money(weekly["spent"]), helper)
-
-        row3 = st.columns(2)
-        with row3[0]:
+        with row2[2]:
             soft_card("Monthly Budget", money(monthly["budgeted"]), datetime.now().strftime("%B %Y"))
-        with row3[1]:
+        with row2[3]:
             helper = "Over limit" if monthly["spent"] > monthly["budgeted"] else "This month"
             soft_card("Monthly Spent", money(monthly["spent"]), helper)
 
@@ -816,6 +1012,7 @@ def accounts_editor(state: dict) -> None:
 def monthly_page(state: dict) -> None:
     render_header("Monthly Budget", "Track bill days, monthly spending, emergency expenses, and leftover transfers.")
     accounts_editor(state)
+    sync_live_widget_values(state)
     st.divider()
 
     metrics = monthly_metrics(state)
@@ -881,6 +1078,7 @@ def monthly_page(state: dict) -> None:
 def weekly_page(state: dict) -> None:
     render_header("Weekly Budget", "Only your weekly budget and weekly insights live here.")
     st.caption(f"Current week: {week_label(week_key())}")
+    sync_live_widget_values(state)
     metrics = weekly_metrics(state)
     summary = st.columns(3)
     with summary[0]:
@@ -955,6 +1153,7 @@ def weekly_page(state: dict) -> None:
 
 def debt_page(state: dict) -> None:
     render_header("Debt", "Track debt categories, due days, and total balances in one place.")
+    sync_live_widget_values(state)
     debts = normalize_debts(state.get("debts", []))
     due_debt = min(debts, key=lambda item: item["due_day"]) if debts else None
     summary = st.columns(3)
@@ -1052,13 +1251,42 @@ def main() -> None:
     process_rollovers(state)
 
     if "theme_mode" not in st.session_state:
-        st.session_state.theme_mode = "Light"
+        st.session_state.theme_mode = "Dark"
     if "page" not in st.session_state:
         st.session_state.page = "Dashboard"
+    if "logged_in" not in st.session_state:
+        st.session_state.logged_in = False
     apply_theme(st.session_state.theme_mode)
 
+    if not auth_page(state):
+        save_state(state)
+        return
+
+    rollover_watch(state)
+
     with st.sidebar:
-        st.markdown("## Aura")
+        st.markdown(f'<div class="brand-row">{AURA_MARK}<div style="font-size:1.3rem;font-weight:700;">Aura</div></div>', unsafe_allow_html=True)
+        profile = state.setdefault("profile", {"name": "Your Name", "title": "Personal Finance Owner", "photo": ""})
+        with st.expander("Edit Profile"):
+            profile["name"] = st.text_input("Name", value=profile.get("name", "Your Name"), key="profile_name")
+            profile["title"] = st.text_input("Title", value=profile.get("title", "Personal Finance Owner"), key="profile_title")
+            profile["photo"] = st.text_input("Photo URL", value=profile.get("photo", ""), key="profile_photo")
+            uploaded_photo = st.file_uploader("Upload Photo", type=["png", "jpg", "jpeg", "webp"], key="profile_photo_upload")
+            if uploaded_photo is not None:
+                profile["photo"] = uploaded_file_to_data_url(uploaded_photo)
+        st.markdown('<div class="profile-box">', unsafe_allow_html=True)
+        if profile.get("photo"):
+            st.image(profile["photo"], width=56)
+        else:
+            st.markdown(
+                f'<div class="profile-avatar">{profile.get("name", "Y")[:2].upper()}</div>',
+                unsafe_allow_html=True,
+            )
+        st.markdown(
+            f'<div class="profile-name">{profile.get("name","Your Name")}</div><div class="profile-title">{profile.get("title","Personal Finance Owner")}</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
         theme_mode = st.selectbox("Theme", ["Light", "Dark"], index=0 if st.session_state.theme_mode == "Light" else 1)
         if theme_mode != st.session_state.theme_mode:
             st.session_state.theme_mode = theme_mode
@@ -1070,6 +1298,12 @@ def main() -> None:
             key="page",
             label_visibility="collapsed",
         )
+        if st.button("Logout", use_container_width=True):
+            st.session_state.logged_in = False
+            for key in ["login_username", "login_password"]:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
         st.caption("Luxury personal finance, organized around what matters most.")
 
     page = st.session_state.page
