@@ -116,7 +116,16 @@ def load_state() -> dict:
         save_state(default_state)
         return default_state
 
-    loaded = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    try:
+        raw = STATE_FILE.read_text(encoding="utf-8").strip()
+        if not raw:
+            raise json.JSONDecodeError("Empty JSON file", "", 0)
+        loaded = json.loads(raw)
+    except (json.JSONDecodeError, OSError):
+        default_state = default_state_copy()
+        save_state(default_state)
+        return default_state
+
     if "_meta" not in loaded:
         loaded["_meta"] = {"updated_at": ""}
     return loaded
