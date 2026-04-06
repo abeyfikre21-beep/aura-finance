@@ -813,7 +813,7 @@ def apply_theme(mode: str) -> None:
             height: 1.45rem;
             flex: 0 0 auto;
         }}
-        .page-title {{ font-family: 'Cormorant Garamond', serif; font-size: 2.7rem; font-weight: 700; margin-bottom: 0.15rem; color: {palette["title"]}; text-align: left; }}
+        .page-title {{ font-family: 'Cormorant Garamond', serif; font-size: 3.05rem; font-weight: 700; margin-bottom: 0.15rem; color: {palette["title"]}; text-align: left; }}
         .page-subtitle {{ color: {palette["subtitle"]}; margin-bottom: 1rem; text-align: left; }}
         .section-label {{ font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.18em; color: {palette["section"]}; margin: 1rem 0 0.8rem; }}
         .hero-card, .soft-card, .glass-panel {{
@@ -1003,6 +1003,12 @@ def auth_page(state: dict) -> bool:
         "password_hash": str(auth.get("password_hash", "")).strip(),
         "source": "local_state",
     }
+
+    if st.session_state.get("logged_in") or st.session_state.get("auth_verified"):
+        st.session_state.logged_in = True
+        st.session_state["auth_verified"] = True
+        return True
+
     st.markdown(
         f'<div class="brand-row" style="margin-bottom:0.6rem;">{AURA_MARK}<div class="page-title">{APP_TITLE}</div></div>',
         unsafe_allow_html=True,
@@ -1030,11 +1036,6 @@ def auth_page(state: dict) -> bool:
                     st.session_state["auth_verified"] = True
                     st.rerun()
         return False
-
-    if st.session_state.get("logged_in") or st.session_state.get("auth_verified"):
-        st.session_state.logged_in = True
-        st.session_state["auth_verified"] = True
-        return True
 
     st.markdown("### Sign In")
     with st.form("login_form"):
@@ -1087,7 +1088,6 @@ def live_sync_watch() -> None:
 
 
 def dashboard_page(state: dict) -> None:
-    render_header("Aura Finance", "A calm command center for your money, budgets, debt, and leftover cash flow.")
     accounts = state["accounts"]
     sync_live_widget_values(state)
     edit_left, edit_right = st.columns([14, 1])
